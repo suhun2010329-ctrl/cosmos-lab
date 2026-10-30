@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>빅뱅 2D · 세 개의 시계</title>
+  <meta name="description" content="우주의 한 단면을 2차원으로 보며 팽창 시계, 로그 시간, 보통 시계를 나란히 비교하는 빅뱅 시뮬레이션">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@700;800&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/src/shared/base.css">
+  <link rel="stylesheet" href="/src/bigbang/style.css">
+</head>
+<body>
+<nav class="topnav"><a href="../">← Cosmos Lab</a></nav>
+<div class="wrap">
+  <header>
+    <h1>빅뱅 2D · 세 개의 시계</h1>
+    <p>우주의 한 단면(한 변 100 Mpc/h, 오늘 기준)을 평면으로 잘라 봅니다. 같은 역사를 세 가지 시계로 재며, 어느 시계를 쓰느냐에 따라 무엇이 ‘오래’ 걸리는지가 얼마나 달라지는지 비교합니다.</p>
+  </header>
+
+  <div class="layout">
+    <div class="main">
+      <div class="stage" id="stage">
+        <canvas id="cv" aria-label="팽창하는 우주의 2차원 단면"></canvas>
+        <div class="hud tl"><div class="era" id="hudEra"></div><div class="sub" id="hudSub"></div></div>
+        <div class="hud tr"><div id="hudA"></div><div class="sub" id="hudT"></div></div>
+        <div class="hud bl"><div id="hudSize"></div><div class="sub" id="hudNote"></div></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" type="button" id="playBtn">일시정지</button>
+        <button class="btn" type="button" id="restartBtn">처음부터</button>
+        <div class="group" id="clockChips">
+          <span class="lbl">재생 시계</span>
+          <button class="chip" type="button" data-clock="expand" aria-pressed="true">팽창 시계</button>
+          <button class="chip" type="button" data-clock="logt" aria-pressed="false">로그 시간</button>
+          <button class="chip" type="button" data-clock="normal" aria-pressed="false">보통 시계</button>
+        </div>
+        <div class="group" id="speedChips">
+          <span class="lbl">속도</span>
+          <button class="chip" type="button" data-speed="0.5" aria-pressed="false">0.5×</button>
+          <button class="chip" type="button" data-speed="1" aria-pressed="true">1×</button>
+          <button class="chip" type="button" data-speed="2" aria-pressed="false">2×</button>
+          <button class="chip" type="button" data-speed="4" aria-pressed="false">4×</button>
+        </div>
+        <div class="group" id="modelChips">
+          <span class="lbl">암흑에너지</span>
+          <button class="chip" type="button" data-model="lcdm" aria-pressed="true">Planck 2018 ΛCDM</button>
+          <button class="chip" type="button" data-model="desi" aria-pressed="false">DESI DR2 w₀wₐ</button>
+        </div>
+      </div>
+      <p class="note" id="clockNote"></p>
+
+      <section class="clocks">
+        <h2>같은 역사, 세 개의 시계</h2>
+        <p class="note">막대마다 왼쪽 끝이 시작, 오른쪽 끝이 미래입니다. 막대 색은 그때 우주 안에서 본 하늘(빛의 온도) 색입니다. 막대를 누르면 그 시점으로 갑니다.</p>
+        <div class="clock-canvas" id="clockWrap">
+          <canvas id="clk" aria-hidden="true"></canvas>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+        <dl class="readouts compare" id="share"></dl>
+      </section>
+    </div>
+
+    <aside class="panel">
+      <section>
+        <h2>우주 크기 (오늘 = 1)</h2>
+        <div class="big" id="rA"></div>
+      </section>
+      <section>
+        <h2>측정값</h2>
+        <dl class="readouts">
+          <dt>빅뱅 후 시간</dt><dd id="rT"></dd>
+          <dt>광자 온도</dt><dd id="rTemp"></dd>
+          <dt>허블 매개변수 H</dt><dd id="rH"></dd>
+          <dt>단면 한 변 실제 길이</dt><dd id="rSize"></dd>
+          <dt>빛의 평균 자유 경로</dt><dd id="rMfp"></dd>
+          <dt>원자핵</dt><dd id="rNuc"></dd>
+          <dt>밀도 요동 σ₈(z)</dt><dd id="rS8"></dd>
+        </dl>
+      </section>
+      <section>
+        <h2>에너지 구성</h2>
+        <div class="mix"><span id="mDE" style="background:var(--c-de)"></span><span id="mDM" style="background:var(--c-dm)"></span><span id="mB" style="background:var(--c-b)"></span><span id="mR" style="background:var(--c-rad)"></span></div>
+        <div class="mixlegend" id="mixLegend"></div>
+      </section>
+      <section class="era-card">
+        <h2>지금 일어나는 일</h2>
+        <h3 id="eraTitle"></h3>
+        <p id="eraText"></p>
+      </section>
+      <section>
+        <h2>시대로 바로 가기</h2>
+        <div class="jumps" id="jumps"></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="guide">
+    <div>
+      <h3>팽창 시계</h3>
+      <p>우주의 크기 a가 10배 커지는 일을 한 칸으로 셉니다. 빅뱅 후 몇 분의 원소 합성과 최근 수십억 년이 비슷한 길이를 차지합니다. 물리 법칙이 바뀌는 순간(온도 문턱)이 고르게 퍼져 보이는 시계입니다.</p>
+    </div>
+    <div>
+      <h3>로그 시간</h3>
+      <p>시간 자체를 10배씩 셉니다. 대부분의 시대에 우주 크기는 시간의 거듭제곱(a ∝ t^½, t^⅔)으로 자라므로 팽창 시계와 모양이 비슷하지만, 인플레이션처럼 H가 일정한 구간은 담지 못합니다.</p>
+    </div>
+    <div>
+      <h3>보통 시계</h3>
+      <p>달력처럼 같은 간격으로 흐르는 시간입니다. 원소 합성, 우주배경복사, 첫 별까지가 모두 막대 왼쪽 끝 몇 픽셀 안에 들어갑니다. 우리가 익숙한 시계로는 초기 우주가 ‘거의 없었던 것’처럼 보입니다.</p>
+    </div>
+    <div>
+      <h3>계산과 한계</h3>
+      <p>배경 우주, 재결합(피블스 방정식), 핵합성(n/p 반응률 적분), 별 형성 역사는 3D 탐사기와 같은 모듈(src/shared)로 계산합니다. 단면의 구조는 3차원 선형 이론의 rms 변위에 맞춘 2차원 젤도비치 근사라서, 실제 N-body보다 실 모양이 덜 날카롭고 늦은 시기에는 흐려집니다.</p>
+    </div>
+  </section>
+</div>
+<script type="module" src="/src/bigbang/main.ts"></script>
+</body>
+</html>

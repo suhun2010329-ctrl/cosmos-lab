@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Cosmos Lab</title>
+  <meta name="description" content="4차원 도형, 빅뱅 2D, 3D 우주 탐사기를 한곳에 모은 과학 시뮬레이션 모음">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@700;800&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/src/shared/base.css">
+  <link rel="stylesheet" href="/src/hub/style.css">
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <p class="kicker">Cosmos Lab</p>
+    <h1>공간과 시간을 직접 돌려 보는 실험실</h1>
+    <p class="lede">네 번째 차원의 도형부터 빅뱅 직후의 플라스마, 오늘의 은하와 그 안의 행성까지. 세 시뮬레이션은 같은 우주론 계산 모듈을 함께 씁니다.</p>
+  </header>
+
+  <ul class="cards">
+    <li>
+      <a class="card" href="fourd/">
+        <span class="tag">4D · Canvas 2D</span>
+        <h2>4차원 관측실</h2>
+        <p>테서랙트, 16·24·5포체, 클리퍼드 토러스를 여섯 개의 회전 평면으로 돌리고 3차원 그림자로 비춥니다.</p>
+        <span class="go">열기 →</span>
+      </a>
+    </li>
+    <li>
+      <a class="card" href="bigbang/">
+        <span class="tag">2D · Canvas 2D</span>
+        <h2>빅뱅 2D · 세 개의 시계</h2>
+        <p>우주 한 단면에서 입자가 바뀌어 가는 모습을 보며, 팽창 시계 · 로그 시간 · 보통 시계로 같은 역사를 나란히 잽니다.</p>
+        <span class="go">열기 →</span>
+      </a>
+    </li>
+    <li>
+      <a class="card" href="universe/">
+        <span class="tag">3D · WebGL 2 · Three.js</span>
+        <h2>팽창 시계 · 3D 우주 탐사기</h2>
+        <p>PM N-body 32³ 입자와 은하 약 11만 개. 우주 거대구조에서 은하 하나, 별 하나, 그 별의 행성까지 내려가고 원소의 기원을 따라갑니다.</p>
+        <span class="go">열기 →</span>
+      </a>
+    </li>
+  </ul>
+
+  <section class="about">
+    <h2>공용 과학 모듈 (src/shared)</h2>
+    <ul>
+      <li><b>cosmology</b> 프리드만 방정식(Planck 2018 · DESI DR2), g*(T) 보정 온도, 시간표, 선형 성장, Eisenstein–Hu 파워 스펙트럼, 초기 조건</li>
+      <li><b>physics</b> 재결합(피블스 방정식) · 재이온화 · 광학 깊이, 빅뱅 핵합성 n/p 적분, 별 형성 역사와 원소 생성 통로</li>
+      <li><b>eras · elements · color · format</b> 시대 목록, 원소 118종의 기원, 흑체 색, 한국어 단위 표기</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

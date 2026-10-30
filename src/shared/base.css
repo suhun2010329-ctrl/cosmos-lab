@@ -1,0 +1,12 @@
+/* 모든 페이지 공통: 기본 상자 모델과 위쪽 이동 막대. 색과 글꼴은 각 페이지 style.css가 정한다. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden]:not([hidden="until-found" i]) { display: none !important; }
+
+.topnav {
+  max-width: var(--page-max, 1320px); margin: 0 auto 12px; font-size: 13px;
+}
+.topnav a { color: var(--muted, #666); text-decoration: none; }
+.topnav a:hover { color: var(--accent, #333); text-decoration: underline; }

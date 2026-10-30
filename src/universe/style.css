@@ -1,0 +1,166 @@
+/* 3D 우주 탐사기 (팽창 시계) */
+/* 레이아웃: 3D 관측창(항상 어두움)이 주인공, 오른쪽 계기판, 아래에 우주 색 타임라인·에너지 구성 띠, 그 아래 원소 주기율표, 맨 아래 방법과 참고 문헌 */
+:root {
+  --bg: #eeedf3;
+  --panel: #fafafc;
+  --ink: #17151f;
+  --muted: #5f5a70;
+  --line: #d8d5e2;
+  --accent: #6a3fd1;
+  --on-accent: #ffffff;
+  --c-de: #2a78d6;
+  --c-dm: #eb6834;
+  --c-b: #1baf7a;
+  --c-rad: #eda100;
+  --c-inf: #bdb7cc;
+  --o1: #2a78d6; --o2: #eb6834; --o3: #1baf7a; --o4: #eda100; --o5: #e87ba4; --o6: #008300; --o7: #6250d6;
+  --f-display: "Gothic A1", "Noto Sans KR", system-ui, sans-serif;
+  --f-body: "Noto Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0c14; --panel: #17141f; --ink: #ebe8f3; --muted: #9c96ad; --line: #2a2536;
+    --accent: #b49bff; --on-accent: #0e0c14;
+    --c-de: #3987e5; --c-dm: #d95926; --c-b: #199e70; --c-rad: #c98500; --c-inf: #4a4458;
+    --o1: #3987e5; --o2: #d95926; --o3: #199e70; --o4: #c98500; --o5: #d55181; --o6: #008300; --o7: #9085e9;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e0c14; --panel: #17141f; --ink: #ebe8f3; --muted: #9c96ad; --line: #2a2536;
+  --accent: #b49bff; --on-accent: #0e0c14;
+  --c-de: #3987e5; --c-dm: #d95926; --c-b: #199e70; --c-rad: #c98500; --c-inf: #4a4458;
+  --o1: #3987e5; --o2: #d95926; --o3: #199e70; --o4: #c98500; --o5: #d55181; --o6: #008300; --o7: #9085e9;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 4.4vw, 44px); letter-spacing: -0.02em; line-height: 1.1; margin: 0; text-wrap: balance; }
+header p { margin: 8px 0 0; color: var(--muted); max-width: 76ch; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.badge { font-family: var(--f-mono); font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+@media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* 관측창은 우주 그 자체라서 테마와 상관없이 어둡게 고정 */
+.stage {
+  position: relative; height: clamp(400px, 72vh, 760px); background: #000; border-radius: 14px; overflow: hidden;
+  color: #f2eefb; touch-action: none; cursor: grab;
+}
+.stage.dragging { cursor: grabbing; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.hud { position: absolute; pointer-events: none; font-size: 13px; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+.hud.tl { top: 14px; left: 16px; right: 42%; }
+.hud.tr { top: 14px; right: 16px; text-align: right; font-family: var(--f-mono); }
+.hud.bl { bottom: 12px; left: 16px; right: 50%; font-family: var(--f-mono); }
+.hud.br { bottom: 12px; right: 16px; left: 52%; text-align: right; }
+.hud .era { font-family: var(--f-display); font-weight: 800; font-size: clamp(18px, 2.4vw, 26px); line-height: 1.2; }
+.hud .sub { opacity: .82; }
+.stage.light-sky { color: #1a1426; }
+.stage.light-sky .hud { text-shadow: 0 1px 6px rgba(255,255,255,.75); }
+.glfail { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: #f2eefb; }
+.fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+.fade.on { opacity: 1; }
+.plabel { position: absolute; font-size: 12px; color: #e9e4f7; pointer-events: none; transform: translate(8px, -50%); text-shadow: 0 1px 4px #000; white-space: nowrap; }
+
+.timeline { position: relative; height: 104px; }
+.timeline canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#scrub {
+  -webkit-appearance: none; appearance: none; position: absolute; left: 0; right: 0; top: 0; height: 40px;
+  width: 100%; margin: 0; background: transparent; cursor: pointer;
+}
+#scrub::-webkit-slider-runnable-track { height: 40px; background: transparent; }
+#scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 4px; height: 40px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+#scrub::-moz-range-track { height: 40px; background: transparent; }
+#scrub::-moz-range-thumb { width: 4px; height: 40px; border: 0; border-radius: 2px; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+.tip {
+  position: absolute; top: 70px; transform: translate(-50%, -100%); pointer-events: none; z-index: 2;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; line-height: 1.45; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  font-variant-numeric: tabular-nums;
+}
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); align-items: center; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.legend .ttl { color: var(--ink); font-weight: 500; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.group .lbl { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.chip, .btn {
+  font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;
+}
+.chip:hover:not(:disabled), .btn:hover { border-color: var(--accent); }
+.chip:disabled { opacity: .42; cursor: not-allowed; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn { border-radius: 8px; padding: 7px 14px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); min-width: 6.5em; }
+.clocknote { font-size: 13px; color: var(--muted); margin: 0; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.panel h2 { font-size: 12px; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; font-weight: 500; }
+.big { font-family: var(--f-mono); font-size: 24px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.big small { display: block; font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.readouts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; font-size: 13px; margin: 0; }
+.readouts dt { color: var(--muted); }
+.readouts dd { margin: 0; font-family: var(--f-mono); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.readouts dd small { display: block; font-family: var(--f-body); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.mix { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); gap: 2px; }
+.mix span { display: block; height: 100%; }
+.mixlegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.mixlegend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
+.card h3, .era-card h3 { font-family: var(--f-display); font-weight: 800; font-size: 18px; margin: 0 0 6px; }
+.era-card p, .note { margin: 0; font-size: 13.5px; color: var(--muted); }
+.jumps { display: flex; flex-wrap: wrap; gap: 6px; }
+.jumps .chip { font-size: 12px; padding: 4px 9px; }
+.card { border-top: 1px solid var(--line); padding-top: 14px; }
+.tbl-wrap { overflow-x: auto; margin-top: 8px; }
+table.pl { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.pl th { text-align: left; color: var(--muted); font-weight: 500; padding: 3px 6px 3px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.pl td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.pl td.num { font-family: var(--f-mono); text-align: right; }
+.hz { color: var(--o3); font-weight: 500; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.elements { display: flex; flex-direction: column; gap: 10px; }
+.el-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px; }
+.el-head h3 { font-family: var(--f-display); font-weight: 800; font-size: 20px; margin: 0; }
+.el-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.pt-wrap { overflow-x: auto; position: relative; padding-bottom: 4px; }
+.pt { display: grid; grid-template-columns: repeat(18, minmax(36px, 1fr)); gap: 3px; min-width: 700px; }
+.el {
+  position: relative; border-radius: 5px; padding: 3px 4px 6px; min-height: 40px; border: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: space-between; cursor: default; overflow: hidden;
+  transition: background-color .3s, opacity .3s;
+}
+.el .z { font-family: var(--f-mono); font-size: 9px; color: var(--muted); line-height: 1; }
+.el .s { font-weight: 700; font-size: 14px; line-height: 1.1; }
+.el .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; display: flex; gap: 1px; }
+.el .bar span { display: block; height: 100%; }
+.el.absent { border-style: dashed; background: transparent !important; }
+.el.absent .s { color: var(--muted); font-weight: 500; }
+.el.absent .bar { opacity: .25; }
+.pt .gap { grid-column: 1 / -1; height: 8px; }
+.pt .ref { font-size: 10px; color: var(--muted); display: grid; place-items: center; border: 1px dotted var(--line); border-radius: 5px; }
+.el-tip { position: absolute; top: 0; left: 0; transform: none; }
+
+.guide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 40px; padding-top: 6px; }
+@media (max-width: 760px) { .guide { grid-template-columns: minmax(0, 1fr); } }
+.guide h3, .refs h3 { font-family: var(--f-display); font-weight: 700; font-size: 16px; margin: 0 0 6px; }
+.guide p, .guide li { color: var(--muted); font-size: 14px; max-width: 66ch; }
+.guide p { margin: 0; }
+.guide ul { margin: 0; padding-left: 1.2em; }
+.guide li { margin-bottom: 4px; }
+.guide b { color: var(--ink); font-weight: 500; }
+.refs ol { margin: 0; padding-left: 1.4em; columns: 2 420px; column-gap: 40px; font-size: 13px; color: var(--muted); }
+.refs li { break-inside: avoid; margin-bottom: 6px; }
+.refs a { color: var(--accent); }

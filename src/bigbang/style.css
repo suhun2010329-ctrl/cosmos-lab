@@ -1,0 +1,108 @@
+/* 빅뱅 2D. 레이아웃: 단면 관측창이 주인공, 오른쪽 계기판, 아래에 세 시계 비교 막대 */
+:root {
+  --bg: #eeedf3;
+  --panel: #fafafc;
+  --ink: #17151f;
+  --muted: #5f5a70;
+  --line: #d8d5e2;
+  --accent: #6a3fd1;
+  --on-accent: #ffffff;
+  --c-de: #2a78d6;
+  --c-dm: #eb6834;
+  --c-b: #1baf7a;
+  --c-rad: #eda100;
+  --c-inf: #bdb7cc;
+  --f-display: "Gothic A1", "Noto Sans KR", system-ui, sans-serif;
+  --f-body: "Noto Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0c14; --panel: #17141f; --ink: #ebe8f3; --muted: #9c96ad; --line: #2a2536;
+    --accent: #b49bff; --on-accent: #0e0c14;
+    --c-de: #3987e5; --c-dm: #d95926; --c-b: #199e70; --c-rad: #c98500; --c-inf: #4a4458;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e0c14; --panel: #17141f; --ink: #ebe8f3; --muted: #9c96ad; --line: #2a2536;
+  --accent: #b49bff; --on-accent: #0e0c14;
+  --c-de: #3987e5; --c-dm: #d95926; --c-b: #199e70; --c-rad: #c98500; --c-inf: #4a4458;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 4.4vw, 44px); letter-spacing: -0.02em; line-height: 1.1; margin: 0; text-wrap: balance; }
+header p { margin: 8px 0 0; color: var(--muted); max-width: 76ch; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+@media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* 관측창은 우주 그 자체라서 테마와 상관없이 어둡게 고정 (배경은 그 시대 하늘 색) */
+.stage { position: relative; height: clamp(360px, 64vh, 680px); background: #000; border-radius: 14px; overflow: hidden; color: #f2eefb; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.hud { position: absolute; pointer-events: none; font-size: 13px; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+.hud.tl { top: 14px; left: 16px; right: 42%; }
+.hud.tr { top: 14px; right: 16px; text-align: right; font-family: var(--f-mono); }
+.hud.bl { bottom: 12px; left: 16px; right: 16px; font-family: var(--f-mono); }
+.hud .era { font-family: var(--f-display); font-weight: 800; font-size: clamp(18px, 2.4vw, 26px); line-height: 1.2; }
+.hud .sub { opacity: .82; }
+.stage.light-sky { color: #1a1426; }
+.stage.light-sky .hud { text-shadow: 0 1px 6px rgba(255,255,255,.75); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.group .lbl { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.chip, .btn {
+  font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;
+}
+.chip:hover, .btn:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn { border-radius: 8px; padding: 7px 14px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); min-width: 6.5em; }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+
+.clocks { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.clocks h2 { font-family: var(--f-display); font-weight: 800; font-size: 18px; margin: 0; }
+.clock-canvas { position: relative; height: 222px; }
+.clock-canvas canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+.tip {
+  position: absolute; transform: translate(-50%, -100%); pointer-events: none; z-index: 2;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; line-height: 1.45; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.panel h2 { font-size: 12px; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; font-weight: 500; }
+.big { font-family: var(--f-mono); font-size: 24px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.big small { display: block; font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.readouts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 12px; font-size: 13px; margin: 0; }
+.readouts dt { color: var(--muted); }
+.readouts dd { margin: 0; font-family: var(--f-mono); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.readouts dd small { display: block; font-family: var(--f-body); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.readouts.compare { max-width: 760px; }
+.readouts.compare dd { text-align: left; }
+.mix { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--line); gap: 2px; }
+.mix span { display: block; height: 100%; }
+.mixlegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.mixlegend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.era-card h3 { font-family: var(--f-display); font-weight: 800; font-size: 18px; margin: 0 0 6px; }
+.era-card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.jumps { display: flex; flex-wrap: wrap; gap: 6px; }
+.jumps .chip { font-size: 12px; padding: 4px 9px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.guide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 40px; padding-top: 6px; }
+@media (max-width: 760px) { .guide { grid-template-columns: minmax(0, 1fr); } }
+.guide h3 { font-family: var(--f-display); font-weight: 700; font-size: 16px; margin: 0 0 6px; }
+.guide p { color: var(--muted); font-size: 14px; max-width: 66ch; margin: 0; }

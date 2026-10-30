@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>4차원 관측실</title>
+  <meta name="description" content="테서랙트와 정다포체를 여섯 평면으로 회전시키고 3차원 그림자로 비춰 보는 4차원 시각화">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/src/shared/base.css">
+  <link rel="stylesheet" href="/src/fourd/style.css">
+</head>
+<body>
+<nav class="topnav"><a href="../">← Cosmos Lab</a></nav>
+<div class="wrap">
+  <header>
+    <div>
+      <h1><em>4</em>차원 관측실</h1>
+      <p class="lede">4차원 도형을 3차원 그림자로 비추고, 그 그림자를 다시 화면에 그립니다. 선의 색은 보이지 않는 네 번째 축 W 위의 위치입니다.</p>
+    </div>
+    <div class="legend" aria-label="W 좌표 색상 범례"><span>W −1</span><span class="bar"></span><span>W +1</span></div>
+  </header>
+
+  <div class="layout">
+    <div class="stage" id="stage">
+      <canvas id="cv" aria-label="회전하는 4차원 도형의 투영"></canvas>
+      <div class="hud"><span id="hudShape"></span><span id="hudState"></span></div>
+      <div class="hint">드래그: 시점 회전 · 휠: 확대 · 더블클릭: 시점 초기화</div>
+    </div>
+
+    <aside class="panel">
+      <section>
+        <h2>도형</h2>
+        <div class="chips" id="shapeChips"></div>
+        <p class="info" id="shapeInfo"></p>
+      </section>
+
+      <section>
+        <h2>회전</h2>
+        <div class="chips" id="presetChips"></div>
+        <p class="info" id="presetNote"></p>
+        <div class="sliders" id="sliders"></div>
+        <p class="info">4차원에서는 축이 아니라 <b>평면</b>을 기준으로 돕니다. 평면이 6개라서 슬라이더도 6개입니다. 단위는 초당 라디안입니다.</p>
+      </section>
+
+      <section>
+        <h2>투영</h2>
+        <div class="chips" id="projChips">
+          <button class="chip" type="button" data-proj="persp" aria-pressed="true">원근</button>
+          <button class="chip" type="button" data-proj="orth" aria-pressed="false">정사영</button>
+        </div>
+        <div class="field">
+          <label for="dist4">4차원 카메라 거리</label>
+          <input type="range" id="dist4" min="1.4" max="6" step="0.05" value="2.4">
+          <output id="dist4Out" for="dist4">2.40</output>
+        </div>
+        <div class="field">
+          <label for="zoom">확대</label>
+          <input type="range" id="zoom" min="0.4" max="2.5" step="0.01" value="1">
+          <output id="zoomOut" for="zoom">1.00×</output>
+        </div>
+      </section>
+
+      <section>
+        <h2>표시</h2>
+        <label class="check"><input type="checkbox" id="showVerts" checked> 꼭짓점</label>
+        <label class="check"><input type="checkbox" id="showAxes" checked> 좌표축 (X Y Z <span class="w">W</span>)</label>
+      </section>
+
+      <div class="row">
+        <button class="btn primary" type="button" id="playBtn">일시정지</button>
+        <button class="btn" type="button" id="resetBtn">각도 초기화</button>
+      </div>
+    </aside>
+  </div>
+
+  <section class="guide">
+    <div>
+      <h3>그림자의 그림자</h3>
+      <p>3차원 물체가 벽에 2차원 그림자를 만들듯, 4차원 도형은 3차원 그림자를 만듭니다. 화면에 보이는 것은 그 3차원 그림자를 한 번 더 비춘 모습입니다.</p>
+    </div>
+    <div>
+      <h3>색이 네 번째 좌표</h3>
+      <p>W가 −1에 가까우면 청록, +1에 가까우면 분홍입니다. 원근 투영에서는 4차원 카메라가 W 쪽에 있어서, 분홍에 가까운 부분이 더 크게 보입니다.</p>
+    </div>
+    <div>
+      <h3>도형은 변하지 않습니다</h3>
+      <p>정육면체가 늘어나고 안팎이 뒤집히는 것처럼 보여도, 4차원 도형은 모양 그대로 돌고 있을 뿐입니다. 모서리 길이가 달라 보이는 것은 투영 때문입니다.</p>
+    </div>
+  </section>
+</div>
+<script type="module" src="/src/fourd/main.ts"></script>
+</body>
+</html>

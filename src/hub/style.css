@@ -1,0 +1,42 @@
+/* 허브 페이지: 시뮬레이션 세 개로 가는 카드 */
+:root {
+  --bg: #eeedf3; --panel: #fafafc; --ink: #17151f; --muted: #5f5a70; --line: #d8d5e2; --accent: #6a3fd1;
+  --f-display: "Gothic A1", "Noto Sans KR", system-ui, sans-serif;
+  --f-body: "Noto Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0c14; --panel: #17141f; --ink: #ebe8f3; --muted: #9c96ad; --line: #2a2536; --accent: #b49bff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e0c14; --panel: #17141f; --ink: #ebe8f3; --muted: #9c96ad; --line: #2a2536; --accent: #b49bff;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.6;
+  padding: 40px max(16px, env(safe-area-inset-right, 0px)) 56px max(16px, env(safe-area-inset-left, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
+.kicker { font-family: var(--f-mono); font-size: 13px; color: var(--accent); margin: 0 0 8px; letter-spacing: .04em; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(30px, 5vw, 52px); line-height: 1.1; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 64ch; margin: 12px 0 0; }
+.cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.card {
+  display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 22px; border-radius: 14px;
+  background: var(--panel); border: 1px solid var(--line); color: inherit; text-decoration: none;
+  transition: border-color .15s, transform .15s;
+}
+.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card h2 { font-family: var(--f-display); font-weight: 800; font-size: 22px; margin: 0; line-height: 1.25; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; flex: 1; }
+.tag { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.go { color: var(--accent); font-weight: 500; font-size: 14px; }
+.about h2 { font-family: var(--f-display); font-weight: 700; font-size: 16px; margin: 0 0 8px; }
+.about ul { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 14px; }
+.about li { margin-bottom: 4px; }
+.about b { color: var(--ink); font-family: var(--f-mono); font-weight: 500; }

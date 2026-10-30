@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>팽창 시계 · 3D 우주 탐사기</title>
+  <meta name="description" content="빅뱅부터 오늘까지 공간의 팽창을 시계로 삼아 3차원으로 재생하는 우주 시뮬레이션">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@700;800&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/src/shared/base.css">
+  <link rel="stylesheet" href="/src/universe/style.css">
+</head>
+<body>
+<nav class="topnav"><a href="../">← Cosmos Lab</a></nav>
+<div class="wrap">
+  <header>
+    <h1>팽창 시계</h1>
+    <p>공간이 커지는 것 자체를 시간으로 삼아 빅뱅부터 오늘까지 3차원으로 재생합니다. 우주 거대구조에서 은하 하나, 별 하나, 그 별의 행성까지 내려갈 수 있고, 원소가 언제 어디서 만들어졌는지도 함께 따라갑니다.</p>
+    <div class="badges">
+      <span class="badge">Planck 2018 · DESI DR2</span>
+      <span class="badge">PM N-body 32³</span>
+      <span class="badge">은하 ~11만 개 (GSMF)</span>
+      <span class="badge">LOD 4단계 · GPU 인스턴싱 · VAT</span>
+      <span class="badge">부동 원점 · 동적 해상도 · 자동 노출</span>
+      <span class="badge">원소 기원 주기율표</span>
+      <span class="badge">IMF 별 · 케플러 통계 행성</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="main">
+      <div class="stage" id="stage">
+        <canvas id="cv" aria-label="팽창하는 우주의 3차원 모습"></canvas>
+        <div class="hud tl"><div class="era" id="hudEra"></div><div class="sub" id="hudEraSub"></div></div>
+        <div class="hud tr"><div id="hudA"></div><div class="sub" id="hudT"></div></div>
+        <div class="hud bl"><div id="hudSize"></div><div class="sub" id="hudSim"></div><div class="sub" id="hudPerf"></div></div>
+        <div class="hud br sub" id="hudHint"></div>
+        <div id="labels"></div>
+        <div class="fade" id="fade"></div>
+      </div>
+
+      <div class="timeline" id="timeline">
+        <canvas id="tl" aria-hidden="true"></canvas>
+        <input type="range" id="scrub" min="-38" max="0.6" step="0.001" value="-38" aria-label="팽창 시계 (log a)">
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <div class="legend">
+        <span class="ttl">에너지 구성 (아래 띠)</span>
+        <span><i style="background:var(--c-de)"></i>암흑에너지</span>
+        <span><i style="background:var(--c-dm)"></i>암흑물질</span>
+        <span><i style="background:var(--c-b)"></i>보통 물질</span>
+        <span><i style="background:var(--c-rad)"></i>복사 (빛·중성미자)</span>
+        <span><i style="background:var(--c-inf)"></i>인플라톤</span>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" type="button" id="playBtn">일시정지</button>
+        <button class="btn" type="button" id="restartBtn">처음부터</button>
+        <div class="group" id="clockChips">
+          <span class="lbl">시계</span>
+          <button class="chip" type="button" data-clock="expand" aria-pressed="true">팽창 시계 (가정)</button>
+          <button class="chip" type="button" data-clock="normal" aria-pressed="false">보통 시계</button>
+        </div>
+        <div class="group" id="speedChips">
+          <span class="lbl">속도</span>
+          <button class="chip" type="button" data-speed="0.5" aria-pressed="false">0.5×</button>
+          <button class="chip" type="button" data-speed="1" aria-pressed="true">1×</button>
+          <button class="chip" type="button" data-speed="2" aria-pressed="false">2×</button>
+          <button class="chip" type="button" data-speed="4" aria-pressed="false">4×</button>
+        </div>
+        <div class="group" id="modelChips">
+          <span class="lbl">암흑에너지</span>
+          <button class="chip" type="button" data-model="lcdm" aria-pressed="true">Planck 2018 ΛCDM</button>
+          <button class="chip" type="button" data-model="desi" aria-pressed="false">DESI DR2 w₀wₐ</button>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="group" id="galGroup">
+          <span class="lbl">은하 탐험</span>
+          <button class="chip" type="button" id="goNear">가까운 은하</button>
+          <button class="chip" type="button" id="goMW">우리 은하 닮은꼴</button>
+          <button class="chip" type="button" id="goDwarf">왜소은하</button>
+          <button class="chip" type="button" id="goBCG">가장 큰 타원은하</button>
+          <button class="chip" type="button" id="flyBtn" aria-pressed="false">자유 비행</button>
+          <button class="chip" type="button" id="homeBtn">상자 전체 보기</button>
+        </div>
+        <div class="group" id="starGroup">
+          <span class="lbl">별과 행성</span>
+          <button class="chip" type="button" id="sysRandom">이 은하의 임의의 별</button>
+          <button class="chip" type="button" id="sysSun">태양 닮은 별</button>
+          <button class="chip" type="button" id="sysRed">적색왜성</button>
+          <button class="chip" type="button" id="sysSolar">태양계 (실제 자료)</button>
+        </div>
+        <div class="group" id="sysGroup" hidden>
+          <span class="lbl">별계 시간</span>
+          <button class="chip" type="button" data-days="1" aria-pressed="false">1일/초</button>
+          <button class="chip" type="button" data-days="20" aria-pressed="true">20일/초</button>
+          <button class="chip" type="button" data-days="365" aria-pressed="false">1년/초</button>
+          <button class="chip" type="button" id="sysBack">은하로 돌아가기</button>
+        </div>
+        <div class="group">
+          <span class="lbl">보기</span>
+          <button class="chip" type="button" id="autoBtn" aria-pressed="true">자동 회전</button>
+          <button class="chip" type="button" id="dmBtn" aria-pressed="true">암흑물질 망</button>
+          <button class="chip" type="button" id="expDown" aria-label="노출 낮추기">노출 −</button>
+          <button class="chip" type="button" id="expUp" aria-label="노출 높이기">노출 +</button>
+        </div>
+      </div>
+      <p class="clocknote" id="clockNote"></p>
+    </div>
+
+    <aside class="panel">
+      <section>
+        <h2>팽창 시계 · 우주 크기 (오늘 = 1)</h2>
+        <div class="big" id="rA"></div>
+      </section>
+
+      <section>
+        <h2>기본 측정값</h2>
+        <dl class="readouts">
+          <dt>보통 시계로 환산</dt><dd id="rT"></dd>
+          <dt>광자 온도</dt><dd id="rTemp"></dd>
+          <dt>허블 매개변수 H</dt><dd id="rH"></dd>
+          <dt>상자 한 변 실제 길이</dt><dd id="rSize"></dd>
+        </dl>
+      </section>
+
+      <section>
+        <h2>에너지 구성</h2>
+        <div class="mix"><span id="mDE" style="background:var(--c-de)"></span><span id="mDM" style="background:var(--c-dm)"></span><span id="mB" style="background:var(--c-b)"></span><span id="mR" style="background:var(--c-rad)"></span></div>
+        <div class="mixlegend" id="mixLegend"></div>
+      </section>
+
+      <section>
+        <h2>빛과 원소</h2>
+        <dl class="readouts">
+          <dt>자유전자 비율 xₑ</dt><dd id="rXe"></dd>
+          <dt>빛의 평균 자유 경로</dt><dd id="rMfp"></dd>
+          <dt>가벼운 원소</dt><dd id="rNuc"></dd>
+          <dt>무거운 원소</dt><dd id="rMetal"></dd>
+        </dl>
+      </section>
+
+      <section>
+        <h2>구조와 별</h2>
+        <dl class="readouts">
+          <dt>밀도 요동 σ₈(z)</dt><dd id="rS8"></dd>
+          <dt>별 형성률 밀도</dt><dd id="rSfr"></dd>
+          <dt>별 질량 밀도</dt><dd id="rRhoS"></dd>
+          <dt>은하 목록</dt><dd id="rGal"></dd>
+          <dt>N-body 계산</dt><dd id="rSim"></dd>
+        </dl>
+      </section>
+
+      <section class="card" id="galCard" hidden>
+        <h2>선택한 은하</h2>
+        <h3 id="gcName"></h3>
+        <dl class="readouts" id="gcList"></dl>
+      </section>
+
+      <section class="card" id="sysCard" hidden>
+        <h2>별계</h2>
+        <h3 id="scName"></h3>
+        <dl class="readouts" id="scStar"></dl>
+        <div class="tbl-wrap"><table class="pl" id="scPlanets"></table></div>
+        <p class="note" id="scNote"></p>
+      </section>
+
+      <section class="era-card">
+        <h2>지금 일어나는 일</h2>
+        <h3 id="eraTitle"></h3>
+        <p id="eraText"></p>
+      </section>
+
+      <section>
+        <h2>시대로 바로 가기</h2>
+        <div class="jumps" id="jumps"></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="elements">
+    <div class="el-head">
+      <h3>원소: 지금 우주에 있는 것</h3>
+      <p id="elSummary"></p>
+    </div>
+    <div class="legend" id="elLegend">
+      <span class="ttl">주된 기원</span>
+      <span><i style="background:var(--o1)"></i>빅뱅 핵합성</span>
+      <span><i style="background:var(--o2)"></i>무거운 별의 폭발</span>
+      <span><i style="background:var(--o3)"></i>가벼운 별의 죽음</span>
+      <span><i style="background:var(--o4)"></i>백색왜성 폭발</span>
+      <span><i style="background:var(--o5)"></i>중성자별 충돌</span>
+      <span><i style="background:var(--o6)"></i>우주선 쪼개짐</span>
+      <span><i style="background:var(--o7)"></i>사람이 만듦</span>
+    </div>
+    <div class="pt-wrap" id="ptWrap"><div class="pt" id="pt"></div><div class="tip el-tip" id="elTip" hidden></div></div>
+  </section>
+
+  <section class="guide">
+    <div>
+      <h3>팽창이 곧 시계</h3>
+      <p>시간 대신 우주의 크기(척도 인자 a)로 시계를 돌립니다. 우주가 10배 커지는 일이 한 칸이라, 빅뱅 후 3분의 원소 합성과 최근 수십억 년이 비슷한 길이를 차지합니다. ‘보통 시계’로 바꾸면 처음 38만 년이 첫 프레임 안에 지나가 버립니다.</p>
+    </div>
+    <div>
+      <h3>배경 우주와 빛</h3>
+      <p>프리드만 방정식을 Planck 2018 값(H₀ = 67.36, Ω_b h² = 0.02237, Ω_c h² = 0.1200, T_CMB = 2.7255 K, N_eff = 3.046)으로 풀고, 초기 우주 온도는 유효 자유도 g*(T)로 보정합니다. 원소 합성은 중성자↔양성자 반응률로 n/p를 적분하고, 재결합은 RECFAST식 피블스 방정식으로 xₑ(z)를 풀어 마지막 산란면과 플라스마 안개 두께를 계산합니다.</p>
+    </div>
+    <div>
+      <h3>은하 · 별 · 행성</h3>
+      <p>N-body로 키운 32,768개 입자에 관측된 은하 별질량 함수(Baldry 2012)만큼의 은하(별 질량 10⁸ M☉ 이상, 약 11만 개)를 붙입니다. 무거운 은하일수록 빽빽한 곳에 놓이고, 크기(van der Wel 2014)·별 형성 정지(Peng 2010)·질량 성장(Madau–Dickinson 2014)이 시간에 따라 바뀝니다. 가까이 가면 은하 하나가 수만 개의 별로 절차 생성되고, 그 안의 별은 Kroupa 초기 질량 함수로, 행성은 케플러 관측 통계와 금속량 의존성(Fischer & Valenti 2005)으로 만듭니다.</p>
+    </div>
+    <div>
+      <h3>원소의 기원</h3>
+      <p>각 원소를 만드는 천체(빅뱅, 무거운 별의 폭발, 가벼운 별의 죽음, 백색왜성 폭발, 중성자별 충돌, 우주선)의 비율은 Johnson(2019) 주기율표를 단순화했습니다. 각 천체가 원소를 내놓는 시점은 별 형성 역사에 지연 시간 분포(∝ t⁻¹, Maoz & Mannucci 2012)를 곱해 계산하고, 존재비는 Asplund 외(2009) 태양 값을 씁니다.</p>
+    </div>
+    <div>
+      <h3>게임 엔진식 최적화</h3>
+      <ul>
+        <li><b>LOD 4단계</b>: 우주망 점 → 은하 임포스터(가짜 그림) → 별 수만 개짜리 절차 생성 은하 → 별계 장면. 오픈 월드 게임의 거리별 모델 교체와 같고, 단계 사이는 교차 페이드로 바꿔 튀지 않게 합니다.</li>
+        <li><b>GPU 인스턴싱</b>: 은하 11만 개를 그리기 호출 한 번으로 그립니다(숲·군중 렌더링 방식).</li>
+        <li><b>정점 애니메이션 텍스처(VAT)</b>: N-body 결과를 텍스처 키프레임 두 장에 담고 정점 셰이더에서 보간합니다. CPU는 키프레임이 바뀔 때만 1 MB를 올리고, 텍스처 두 장을 번갈아 씁니다(더블 버퍼).</li>
+        <li><b>부동 원점</b>: 카메라를 항상 원점에 두고 세상을 옮겨, 148 Mpc 상자에서 수백 파섹짜리 별 무리까지 float 정밀도 문제 없이 확대합니다(Kerbal Space Program 방식). 별계는 별을 원점으로 한 별도 장면으로 불러옵니다.</li>
+        <li><b>주기 경계 최소 이미지</b>: 상자 안에서는 셰이더가 모든 은하를 카메라에 가장 가까운 복제 위치로 옮겨, 끝없이 이어진 우주처럼 보입니다.</li>
+        <li><b>절차 생성 + 씨앗</b>: 은하 모양과 별계는 저장하지 않고 은하 번호에서 결정적으로 다시 만듭니다(No Man's Sky, Elite Dangerous 방식).</li>
+        <li><b>객체 풀링 · 시간 분할</b>: 정밀 은하 3개분 버퍼를 미리 만들어 재사용하고, 별 생성은 한 프레임에 몇 밀리초씩만 나눠 합니다.</li>
+        <li><b>공간 해시 격자</b>: 카메라 주변 은하만 빠르게 찾아 정밀 LOD 후보를 고릅니다.</li>
+        <li><b>화면 크기 컬링</b>: 화면에서 너무 작고 어두운 은하는 정점 셰이더에서 버립니다.</li>
+        <li><b>자동 노출(눈 적응)</b>와 <b>동적 해상도</b>: 가까이 갈수록 노출을 낮추고, 프레임 시간이 길어지면 렌더 해상도를 낮춰 속도를 지킵니다. N-body는 웹 워커(별도 스레드)에서 돌립니다.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>한계</h3>
+      <p>은하 위치는 관측된 우주 지도(SDSS·DESI)와 같은 통계에서 나온 것이지, 실제 은하 하나하나를 재현한 지도는 아닙니다. N-body 입자 하나가 우리 은하 헤일로 정도의 질량이라, 작은 은하는 부분격자 모형으로 배치합니다. 행성은 실제 발견된 외계행성이 아니라 관측 통계를 따르는 가상의 행성입니다. 행성과 별의 화면 크기는 보기 쉽게 확대했습니다.</p>
+    </div>
+  </section>
+
+  <section class="refs">
+    <h3>참고 문헌과 관측값 출처</h3>
+    <ol>
+      <li>Planck Collaboration (2020), Planck 2018 results VI. Cosmological parameters, A&amp;A 641, A6. <a href="https://arxiv.org/abs/1807.06209">arXiv:1807.06209</a></li>
+      <li>DESI Collaboration (2025), DESI DR2 Results II: BAO and Cosmological Constraints. <a href="https://arxiv.org/abs/2503.14738">arXiv:2503.14738</a></li>
+      <li>Eisenstein &amp; Hu (1998), ApJ 496, 605. <a href="https://arxiv.org/abs/astro-ph/9709112">astro-ph/9709112</a></li>
+      <li>Seager, Sasselov &amp; Scott (1999), RECFAST, ApJ 523, L1. <a href="https://arxiv.org/abs/astro-ph/9909275">astro-ph/9909275</a></li>
+      <li>Pitrou, Coc, Uzan &amp; Vangioni (2018), PRIMAT, Phys. Rep. 754, 1. <a href="https://arxiv.org/abs/1801.08023">arXiv:1801.08023</a></li>
+      <li>Bernstein, Brown &amp; Feinberg (1989), Rev. Mod. Phys. 61, 25.</li>
+      <li>Cooke, Pettini &amp; Steidel (2018), ApJ 855, 102. <a href="https://arxiv.org/abs/1710.11129">arXiv:1710.11129</a></li>
+      <li>Aver et al. (2021), JCAP 03, 027. <a href="https://arxiv.org/abs/2010.04180">arXiv:2010.04180</a></li>
+      <li>Husdal (2016), Galaxies 4, 78. <a href="https://arxiv.org/abs/1609.04979">arXiv:1609.04979</a></li>
+      <li>HotQCD, Bazavov et al. (2019), PLB 795, 15. <a href="https://arxiv.org/abs/1812.08235">arXiv:1812.08235</a></li>
+      <li>D'Onofrio &amp; Rummukainen (2016), PRD 93, 025003. <a href="https://arxiv.org/abs/1508.07161">arXiv:1508.07161</a></li>
+      <li>Zel'dovich (1970), A&amp;A 5, 84 · Hockney &amp; Eastwood (1988), Computer Simulation Using Particles.</li>
+      <li>Press &amp; Schechter (1974), ApJ 187, 425.</li>
+      <li>Madau &amp; Dickinson (2014), ARA&amp;A 52, 415. <a href="https://arxiv.org/abs/1403.0007">arXiv:1403.0007</a></li>
+      <li>Baldry et al. (2012), Galaxy And Mass Assembly: the galaxy stellar mass function, MNRAS 421, 621. <a href="https://arxiv.org/abs/1111.5707">arXiv:1111.5707</a></li>
+      <li>van der Wel et al. (2014), 3D-HST+CANDELS: The Evolution of the Galaxy Size–Mass Distribution, ApJ 788, 28. <a href="https://arxiv.org/abs/1404.2844">arXiv:1404.2844</a></li>
+      <li>Peng et al. (2010), Mass and Environment as Drivers of Galaxy Evolution, ApJ 721, 193. <a href="https://arxiv.org/abs/1003.4747">arXiv:1003.4747</a></li>
+      <li>Moster, Naab &amp; White (2013), MNRAS 428, 3121. <a href="https://arxiv.org/abs/1205.5807">arXiv:1205.5807</a></li>
+      <li>Tremonti et al. (2004), The Origin of the Mass–Metallicity Relation, ApJ 613, 898.</li>
+      <li>Speagle et al. (2014), ApJS 214, 15. <a href="https://arxiv.org/abs/1405.2041">arXiv:1405.2041</a></li>
+      <li>Kroupa (2001), On the variation of the initial mass function, MNRAS 322, 231.</li>
+      <li>Johnson (2019), Populating the periodic table: Nucleosynthesis of the elements, Science 363, 474.</li>
+      <li>Asplund, Grevesse, Sauval &amp; Scott (2009), The Chemical Composition of the Sun, ARA&amp;A 47, 481. <a href="https://arxiv.org/abs/0909.0948">arXiv:0909.0948</a></li>
+      <li>Maoz &amp; Mannucci (2012), Type-Ia Supernova Rates and the Progenitor Problem, PASA 29, 447.</li>
+      <li>Abbott et al. (2017), Multi-messenger Observations of a Binary Neutron Star Merger (GW170817), ApJL 848, L12.</li>
+      <li>Fischer &amp; Valenti (2005), The Planet-Metallicity Correlation, ApJ 622, 1102.</li>
+      <li>Fressin et al. (2013), The False Positive Rate of Kepler and the Occurrence of Planets, ApJ 766, 81.</li>
+      <li>Fulton et al. (2017), The California-Kepler Survey III: A Gap in the Radius Distribution of Small Planets, AJ 154, 109.</li>
+      <li>Kopparapu et al. (2013), Habitable Zones around Main-sequence Stars, ApJ 765, 131.</li>
+      <li>Johnson &amp; Li (2012), The First Planets: the Critical Metallicity for Planet Formation, ApJ 751, 81.</li>
+      <li>McDonough (2003), Compositional Model for the Earth's Core, Treatise on Geochemistry 2, 547.</li>
+      <li>Naidu et al. (2025), MoM-z14 at z = 14.44. <a href="https://arxiv.org/abs/2505.11263">arXiv:2505.11263</a></li>
+      <li>Licquia &amp; Newman (2015), Improved Estimates of the Milky Way's Stellar Mass, ApJ 806, 96.</li>
+      <li>Particle Data Group (2024), 중성자 수명 τₙ = 878.4 ± 0.5 s.</li>
+    </ol>
+  </section>
+</div>
+<script type="module" src="/src/universe/main.ts"></script>
+</body>
+</html>
