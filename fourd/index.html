@@ -75,6 +75,32 @@
     </aside>
   </div>
 
+  <section class="sr">
+    <div class="sr-head">
+      <h2>시공간 시소: 움직이면 시간이 느려지는 이유</h2>
+      <p class="lede">특수 상대성 이론에서는 모든 물체가 4차원 시공간을 언제나 빛의 속도 c로 지나갑니다. 공간으로 빨리 움직이면 그만큼 시간 방향 몫이 줄어 시계가 느려집니다(시간 지연). 빛에 가까워질수록 더 가속하는 데 필요한 에너지는 끝없이 커집니다.</p>
+    </div>
+    <div class="sr-layout">
+      <div class="sr-canvas"><canvas id="srCv" aria-label="속도 원과 쌍둥이 여행 시공간 그림"></canvas></div>
+      <aside class="panel">
+        <section>
+          <h2>속도</h2>
+          <div class="field">
+            <label for="srSpeed">v / c</label>
+            <input type="range" id="srSpeed" min="0" max="0.999" step="0.001" value="0.8">
+          </div>
+          <div class="chips" id="srPresets" style="margin-top:10px"></div>
+          <p class="info" id="srNote"></p>
+        </section>
+        <section>
+          <h2>측정값</h2>
+          <dl class="readouts" id="srReadouts"></dl>
+        </section>
+        <p class="info">오른쪽 그림은 4광년 떨어진 별을 다녀오는 쌍둥이입니다. 점 하나가 각자의 시계로 1년입니다. 여행자의 점이 성기게 찍히는 만큼 덜 늙습니다.</p>
+      </aside>
+    </div>
+  </section>
+
   <section class="guide">
     <div>
       <h3>그림자의 그림자</h3>
@@ -83,6 +109,10 @@
     <div>
       <h3>색이 네 번째 좌표</h3>
       <p>W가 −1에 가까우면 청록, +1에 가까우면 분홍입니다. 원근 투영에서는 4차원 카메라가 W 쪽에 있어서, 분홍에 가까운 부분이 더 크게 보입니다.</p>
+    </div>
+    <div>
+      <h3>고차원 속의 우주</h3>
+      <p>‘브레인 충돌’은 우리 3차원 공간이 더 높은 차원에 떠 있는 막이라는 브레인 우주론을, ‘3-구면’은 4차원 블랙홀의 3차원 껍질이 우리 우주라는 가설을 4차원 그림으로 보여 줍니다. 둘 다 아직 관측으로 확인되지 않은 가설입니다.</p>
     </div>
     <div>
       <h3>도형은 변하지 않습니다</h3>

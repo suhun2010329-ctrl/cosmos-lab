@@ -110,3 +110,42 @@ describe("2D 단면 초기 조건", () => {
     expect(sigmaPsi(core, L, n)).toBeLessThan(12);
   });
 });
+
+describe("미래 시나리오", async () => {
+  const { buildFates } = await import("../src/shared/scenarios");
+  const fates = buildFates(core, createCosmology({ model: "desi" }));
+  it("ΛCDM은 계속 가속 팽창", () => {
+    const f = fates.lcdm;
+    expect(f.end).toBe("forever");
+    expect(f.aAt(f.t0 + 20 * GYR)).toBeGreaterThan(3);
+    expect(f.HAt(f.t0 + 20 * GYR)).toBeGreaterThan(0);
+  });
+  it("빅 크런치: 팽창 최대 약 248억 년, 총수명 약 330억 년 (Luu, Qiu & Tye 2025에 맞춤)", () => {
+    const f = fates.crunch;
+    expect(f.end).toBe("crunch");
+    expect(f.tTurn! / GYR).toBeCloseTo(24.8, 0);
+    expect(f.tEnd / GYR).toBeGreaterThan(32);
+    expect(f.tEnd / GYR).toBeLessThan(34);
+    expect(f.aMax!).toBeGreaterThan(1.5);
+    expect(f.HAt(f.tTurn! + GYR)).toBeLessThan(0);
+    expect(f.aAt(f.tEnd - 1e6 * 3.15576e7)).toBeLessThan(0.2);
+    expect(f.aAt(f.tEnd - 1)).toBeLessThan(1e-8);
+    const ev = f.events.map((e) => e.t);
+    expect([...ev].sort((x, y) => x - y)).toEqual(ev);
+  });
+  it("빅 립: w = −1.5에서 약 230억 년 뒤 (Caldwell 외 2003의 근사식과 일치)", () => {
+    const f = fates.rip;
+    expect(f.end).toBe("rip");
+    const approx = 2 / (3 * 0.5 * core.H0s * Math.sqrt(1 - core.Om)) / GYR;
+    expect((f.tEnd - f.t0) / GYR).toBeGreaterThan(approx * 0.9);
+    expect((f.tEnd - f.t0) / GYR).toBeLessThan(approx * 1.1);
+    const milky = f.events.find((e) => e.label.includes("우리 은하가"))!;
+    expect((f.tEnd - milky.t) / (1e6 * 3.15576e7)).toBeCloseTo(63, -1);
+  });
+  it("DESI w0wa를 늘이면 가속이 끝남", () => {
+    expect(fates.desi.events.some((e) => e.label.includes("가속 팽창이 끝남"))).toBe(true);
+  });
+  it("공동 거리: z* ≈ 1090까지 약 139억 파섹", () => {
+    expect(core.comovingDistance(1089.9) / 1000).toBeCloseTo(13.9, 0);
+  });
+});

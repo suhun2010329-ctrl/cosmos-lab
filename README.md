@@ -1,13 +1,14 @@
 # Cosmos Lab
 
-공간과 시간을 직접 돌려 보는 과학 시뮬레이션 세 가지를 한 저장소에 모았습니다.
-TypeScript + Three.js + Vite로 만들었고, 세 시뮬레이션이 같은 우주론 계산 모듈(`src/shared`)을 함께 씁니다.
+공간과 시간을 직접 돌려 보는 과학 시뮬레이션과 실제 관측 자료로 만든 우주 지도를 한 저장소에 모았습니다.
+TypeScript + Three.js + Vite로 만들었고, 모든 페이지가 같은 우주론 계산 모듈(`src/shared`)을 함께 씁니다.
 
 | 페이지 | 내용 | 기술 |
 |---|---|---|
-| **4차원 관측실** (`/fourd/`) | 테서랙트, 16·24·5포체, 클리퍼드 토러스를 여섯 회전 평면으로 돌리고 3차원 그림자로 비춤 | Canvas 2D |
-| **빅뱅 2D · 세 개의 시계** (`/bigbang/`) | 우주 한 단면의 입자 변화 + 팽창 시계 · 로그 시간 · 보통 시계 비교 | Canvas 2D |
-| **팽창 시계 · 3D 우주 탐사기** (`/universe/`) | PM N-body 32³, 은하 약 11만 개, 은하 → 별 → 행성 LOD, 원소 기원 주기율표 | WebGL 2 · Three.js r128 · Web Worker |
+| **4차원 관측실** (`/fourd/`) | 정다포체·클리퍼드 토러스·3-구면(호프 올)을 여섯 회전 평면으로 회전, 브레인 충돌, 특수 상대성 ‘시공간 시소’와 쌍둥이 여행 | Canvas 2D |
+| **빅뱅 2D · 세 개의 시계** (`/bigbang/`) | 우주 한 단면의 입자 변화, 세 시계 비교, 미래 네 가지(ΛCDM·DESI·빅 크런치·빅 립), 순환 우주와 포앵카레 재귀, 중심 없는 팽창 | Canvas 2D |
+| **우주 지도** (`/atlas/`) | 실제 목록: 별 109,400개, 외계행성 5,043개, 은하 10,195개, 위성은하·구상성단·은하단·초은하단. 오늘 날짜의 태양계부터 관측 가능한 우주까지 한 지도 | WebGL · Three.js · RTE 셰이더 |
+| **팽창 시계 · 3D 우주 탐사기** (`/universe/`) | PM N-body 32³, 10⁷ M☉까지 은하 약 30만 개, 은하 → 별 → 행성 LOD, 원소 기원 주기율표 | WebGL 2 · Three.js r128 · Web Worker |
 
 ## 내 컴퓨터(Windows)에서 실행하기
 
@@ -59,20 +60,25 @@ index.html              허브 페이지
 fourd/index.html        4차원 관측실
 bigbang/index.html      빅뱅 2D
 universe/index.html     3D 우주 탐사기
+atlas/index.html        우주 지도
+public/data/            우주 지도 자료 (출처·라이선스는 public/data/README.md)
+scripts/build_data.py   관측 목록 → public/data 변환
 src/
   shared/               공용 과학 모듈 (모두 strict TypeScript)
     cosmology.ts        프리드만 방정식, g*(T) 온도, 시간표, 선형 성장, Eisenstein–Hu P(k), 초기 조건, FFT
     physics.ts          재결합(피블스 방정식)·재이온화·광학 깊이, 빅뱅 핵합성 n/p, 별 형성 역사·원소 생성 통로
+    scenarios.ts        미래 시나리오: 축이온 장 + 음의 우주상수(크런치), 팬텀 에너지(빅 립), 수축 구간 적분
     eras.ts             시대 목록 (경계 대부분이 계산값)
     elements.ts         원소 118종의 기원(Johnson 2019)·태양 존재비(Asplund 2009)
     color.ts, format.ts, math.ts, base.css
-  fourd/                4D 도형·회전(geometry.ts)과 화면(main.ts)
+  fourd/                4D 도형·회전(geometry.ts), 시공간 시소(relativity.ts), 화면(main.ts)
   bigbang/              2D 젤도비치 변위장(field2d.ts)과 화면(main.ts)
   universe/
     main.ts             3D 렌더링·카메라·LOD·별계·UI
     nbody.worker.ts     PM N-body + 은하 목록 생성 (Web Worker)
     shaders.ts          GLSL 셰이더 (VAT, 인스턴싱, 정밀 은하, 별·행성)
-tests/physics.test.ts   계산값이 관측값과 맞는지 확인
+  atlas/                우주 지도: 자료 읽기, 직접 적은 천체 목록, 우리 은하 모형, 행성계 장면, RTE 셰이더
+tests/                  계산값이 관측값과 맞는지 확인 (29개)
 ```
 
 ## 계산 검증 (`npm test`)
@@ -84,6 +90,17 @@ tests/physics.test.ts   계산값이 관측값과 맞는지 확인
 | 재이온화 광학 깊이 τ | 0.0540 | Planck 2018: 0.0544 |
 | 헬륨 질량 비율 Yₚ | 0.231 | 관측 0.2453 ± 0.0034 (단순 n/p 동결 모형이라 조금 낮음) |
 | 우주의 정오 | z ≈ 1.87 | Madau & Dickinson 2014: z ≈ 1.9 |
+| 빅 크런치 시나리오 | 팽창 최대 248억 년, 수명 약 328억 년 | Luu, Qiu & Tye 2025: 약 330억 년 |
+| 빅 립 (w = −1.5) | 약 230억 년 뒤, 우리 은하는 6천만 년 전에 찢김 | Caldwell 외 2003: 약 220억 년 (H₀ = 70), 6천만 년 |
+| 안드로메다 은하 위치 | l = 121.17°, b = −21.57° | 목록값과 일치 |
+| TRAPPIST-1 생명 가능 지대 | e, f, g | Kopparapu 외 2013 (온도 의존 식) |
+
+## 미래 시나리오에 대하여
+
+빅 크런치 시나리오는 Luu, Qiu & Tye (2025)의 축이온 암흑에너지 + 음의 우주상수 모형을 그대로 푼 것이 아니라,
+‘오늘부터 굴러가기 시작하는 축이온 장’으로 단순화해 그 결론(총수명 약 330억 년, 팽창 최대 약 110억 년 뒤)에 맞춘 것입니다.
+과거 역사는 모든 시나리오에서 Planck 2018 ΛCDM과 같습니다. 수축 구간에서는 장의 운동 에너지가 a⁻⁶으로 커지므로
+마지막 순간은 그 해석해로 이어 붙였습니다.
 
 ## 앞으로 할 일
 

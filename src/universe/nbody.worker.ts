@@ -132,9 +132,9 @@ ctx.onmessage = (ev: MessageEvent<{ model: ModelName; seed: number }>) => {
   // Baldry et al. (2012) 이중 셰히터 별질량 함수 [Mpc⁻³ dex⁻¹]
   const LMS = 10.66, p1 = 3.96e-3, a1s = -0.35, p2 = 0.79e-3, a2s = -1.47;
   const phi = (lm: number) => { const xx = Math.pow(10, lm - LMS); return Math.LN10 * Math.exp(-xx) * (p1 * Math.pow(xx, a1s + 1) + p2 * Math.pow(xx, a2s + 1)); };
-  const LM0 = 8, LM1 = 12.2, NB = 840, dlm = (LM1 - LM0) / NB, cdf = new Float64Array(NB + 1);
+  const LM0 = 7, LM1 = 12.2, NB = 1040, dlm = (LM1 - LM0) / NB, cdf = new Float64Array(NB + 1);
   for (let i = 0; i < NB; i++) cdf[i + 1] = cdf[i] + phi(LM0 + (i + 0.5) * dlm) * dlm;
-  const V = Math.pow(L / core.h, 3), G = Math.min(150000, Math.round(cdf[NB] * V));
+  const V = Math.pow(L / core.h, 3), G = Math.min(320000, Math.round(cdf[NB] * V));
   // 무거운 은하일수록 빽빽한 곳(높은 밀도 가중치 ρ^β)에 놓임
   const betas = [0.6, 0.9, 1.2, 1.5, 1.9];
   const hostCdf = betas.map((b) => {

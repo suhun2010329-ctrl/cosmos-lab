@@ -1026,7 +1026,7 @@ import { DET_FS, DET_VS, GAL_FS, GAL_VS, PART_VS, PL_FS, PL_VS, POINT_FS, STAR_F
       setText("rSfr", ps.toPrecision(3) + " M☉/년/Mpc³<small>MD14 · 최대 대비 " + Math.round(ps / SFR.peak * 100) + "%</small>", true);
       setText("rRhoS", (rs > 0 ? sci(rs, 2) : "0") + " M☉/Mpc³<small>상자 안 별 " + (rs > 0 ? sci(rs * Math.pow(L_BOX / core.h, 3), 1) : "0") + " M☉</small>", true);
     } else { setText("rSfr", "0 (별 없음)"); setText("rRhoS", "0"); }
-    setText("rGal", GAL ? fmtNum(GCOUNT) + "개<small>별 질량 ≥ 10⁸ M☉ (오늘 기준, Baldry 2012)</small>" : (sim.done ? "만드는 중…" : "N-body 계산 뒤 생성"), true);
+    setText("rGal", GAL ? fmtNum(GCOUNT) + "개<small>별 질량 ≥ 10⁷ M☉ (오늘 기준, Baldry 2012)</small>" : (sim.done ? "만드는 중…" : "N-body 계산 뒤 생성"), true);
     setText("rSim", simStatus(la), true);
 
     if (last.era !== ei) { last.era = ei; jumpBtns.forEach(function (b, k) { b.setAttribute("aria-pressed", String(k === ei)); }); }

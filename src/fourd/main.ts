@@ -1,5 +1,6 @@
 // 4차원 관측실: 4차원 회전 → (원근/정사영) 3차원 투영 → 3차원 시점 회전 → 원근 화면 투영.
-import { AXIS_NAMES, PLANES, PRESETS, rotate4, SHAPES, type Geometry4, type PresetKey, type ShapeKey, type Vec4 } from "./geometry";
+import { AXIS_NAMES, PLANES, PRESETS, rotate4, SHAPES, type Geometry4, type PresetKey, type ShapeDef, type ShapeKey, type Vec4 } from "./geometry";
+import { SPEED_PRESETS, SpacetimeSeesaw } from "./relativity";
 import { hexRgb, rgba } from "../shared/color";
 import type { RGB } from "../shared/math";
 
@@ -91,6 +92,7 @@ function draw(): void {
   }
 
   if (state.showAxes) drawAxes();
+  if (flash > 0) { ctx.fillStyle = "rgba(255,255,255," + (0.85 * flash).toFixed(3) + ")"; ctx.fillRect(0, 0, W, H); }
 }
 
 function drawAxes(): void {
@@ -116,7 +118,8 @@ function drawAxes(): void {
 }
 
 function updateHud(): void {
-  $("hudShape").innerHTML = "<b>" + SHAPES[state.shape].label + "</b> · " + (state.persp ? "원근 d=" + state.dist4.toFixed(2) : "정사영");
+  $("hudShape").innerHTML = "<b>" + SHAPES[state.shape].label + "</b> · " + (state.persp ? "원근 d=" + state.dist4.toFixed(2) : "정사영")
+    + (state.shape === "brane" ? " · 브레인 사이 " + (2 * braneGap).toFixed(2) + " · 충돌 " + collisions + "번" : "");
   $("hudState").textContent = state.running ? "회전 중" : "일시정지";
   $("playBtn").textContent = state.running ? "일시정지" : "재생";
 }
@@ -134,7 +137,7 @@ const shapeChips = $("shapeChips");
   shapeChips.appendChild(b);
 });
 function selectShape(key: ShapeKey): void {
-  state.shape = key; geo = SHAPES[key].build();
+  state.shape = key; geo = SHAPES[key].build(); animTime = 0; collisions = 0; wasApart = true;
   setPressed(shapeChips, "data-shape", key);
   $("shapeInfo").innerHTML = SHAPES[key].text + '<span class="num">' + SHAPES[key].num + "</span>";
   updateHud();
@@ -237,12 +240,56 @@ if (reduceMotion) state.running = false;
 state.angles[2] = 0.35; state.angles[4] = 0.2;
 updateHud();
 
+// ---- 움직이는 도형 (브레인 충돌) ----
+let animTime = 0, braneGap = 1, collisions = 0, flash = 0, wasApart = true;
+function animateShape(dt: number): void {
+  const def: ShapeDef = SHAPES[state.shape];
+  if (!def.animate) return;
+  animTime += dt;
+  braneGap = def.animate(animTime, geo.v);
+  if (braneGap < 0.03 && wasApart) { collisions++; flash = 1; wasApart = false; }
+  if (braneGap > 0.2) wasApart = true;
+  updateHud();
+}
+
 let last = performance.now();
 function frame(t: number): void {
   const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
   if (state.running) for (let k = 0; k < 6; k++) state.angles[k] += state.speeds[k] * dt;
+  animateShape(dt);
+  flash = Math.max(0, flash - dt * 1.5);
   draw();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// ---- 시공간 시소 (특수 상대성) ----
+const seesaw = new SpacetimeSeesaw($<HTMLCanvasElement>("srCv"));
+const speedIn = $<HTMLInputElement>("srSpeed");
+function showSeesaw(): void {
+  $("srReadouts").innerHTML = seesaw.readouts().map(([k, v]) => "<dt>" + k + "</dt><dd>" + v + "</dd>").join("");
+}
+speedIn.addEventListener("input", () => {
+  seesaw.setSpeed(parseFloat(speedIn.value) * 299792458);
+  $("srNote").textContent = "";
+  $("srPresets").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", "false"));
+  showSeesaw();
+});
+SPEED_PRESETS.forEach((p) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.textContent = p.label; b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => {
+    seesaw.setSpeed(p.v);
+    speedIn.value = String(Math.min(p.v / 299792458, 0.999));
+    $("srNote").textContent = p.note;
+    $("srPresets").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    showSeesaw();
+  });
+  $("srPresets").appendChild(b);
+});
+seesaw.readTokens();
+seesaw.setSpeed(0.8 * 299792458);
+showSeesaw();
+new MutationObserver(() => seesaw.readTokens()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => seesaw.readTokens());

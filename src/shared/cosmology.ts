@@ -47,6 +47,8 @@ export interface Cosmology {
   sigmaM(M: number): number;
   sEH: number;
   genIC(L: number, n: number, seed: number): Float32Array;
+  /** 공동 거리 [Mpc] (적색편이 z까지) */
+  comovingDistance(z: number): number;
 }
 
 const LN10 = Math.LN10;
@@ -202,9 +204,21 @@ export function createCosmology(opt: { model?: ModelName } = {}): Cosmology {
     return out;
   }
 
+  /** D_C = (c/H0) ∫ dz/E(z), ln(1+z)에 대한 심프슨 적분 */
+  function comovingDistance(z: number): number {
+    if (z <= 0) return 0;
+    const n = 400, u1 = Math.log(1 + z), du = u1 / n;
+    let s = 0;
+    for (let i = 0; i <= n; i++) {
+      const a = Math.exp(-i * du);
+      s += (i === 0 || i === n ? 1 : i % 2 ? 4 : 2) / (a * E(a));
+    }
+    return 299792.458 / (100 * h) * s * du / 3;
+  }
+
   return {
     P, model, w0, wa, h, Om, Ob, Oc, Onu, Or, OL, Ogam, H0s, KMEV, LA_MIN, LA_RH, LA_MAX,
-    E, E2, Hs, parts, wOf, fDE, TofA, gsOf, tOf, laOfT, growth, growthF, Pk, sigmaM, sEH, genIC,
+    E, E2, Hs, parts, wOf, fDE, TofA, gsOf, tOf, laOfT, growth, growthF, Pk, sigmaM, sEH, genIC, comovingDistance,
   };
 }
 

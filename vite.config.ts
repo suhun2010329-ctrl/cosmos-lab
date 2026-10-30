@@ -15,6 +15,7 @@ export default defineConfig({
         fourd: resolve(import.meta.dirname, "fourd/index.html"),
         bigbang: resolve(import.meta.dirname, "bigbang/index.html"),
         universe: resolve(import.meta.dirname, "universe/index.html"),
+        atlas: resolve(import.meta.dirname, "atlas/index.html"),
       },
     },
   },

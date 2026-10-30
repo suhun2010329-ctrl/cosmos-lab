@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>우주 지도</title>
+  <meta name="description" content="별 10만 개, 외계행성 5천 개, 은하 1만 개의 실제 목록으로 만든 행성계부터 관측 가능한 우주까지의 확대 지도">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@700;800&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/src/shared/base.css">
+  <link rel="stylesheet" href="/src/atlas/style.css">
+</head>
+<body>
+<nav class="topnav"><a href="../">← Cosmos Lab</a></nav>
+<div class="wrap">
+  <header>
+    <h1>우주 지도</h1>
+    <p>실제 관측 목록으로 만든 하나의 지도입니다. 태양계의 오늘 행성 위치에서 시작해 이웃 별, 외계행성계, 우리 은하, 국부 은하군, 근방 은하 1만 개를 지나 우주배경복사가 보이는 관측 가능한 우주의 끝까지 끊김 없이 확대·축소합니다.</p>
+  </header>
+
+  <div class="layout">
+    <div class="main">
+      <div class="stage" id="stage">
+        <canvas id="cv" aria-label="우주 지도"></canvas>
+        <div id="labels"></div>
+        <div id="sysLabels"></div>
+        <div class="sel-ring" id="selRing" hidden></div>
+        <div class="hud tl"><div class="big" id="hudScale"></div><div class="sub" id="hudSub"></div></div>
+        <div class="hud tr"><div id="hudTarget"></div><div class="sub" id="hudDist"></div></div>
+        <div class="hud br sub">드래그: 회전 · 휠/두 손가락: 확대 · 누르기: 고르기 · 두 번 누르기: 날아가기</div>
+        <div class="loading" id="loading">자료 읽는 중…</div>
+        <div class="fade" id="fade"></div>
+      </div>
+
+      <div class="controls" id="mapControls">
+        <div class="group" id="levels"><span class="lbl">축척</span></div>
+        <div class="search">
+          <input id="search" type="search" placeholder="찾기: 시리우스, TRAPPIST-1, M31, 처녀자리 은하단…" autocomplete="off" aria-label="천체 찾기">
+          <div class="sugg" id="sugg" hidden></div>
+        </div>
+        <button class="chip" type="button" id="autoBtn" aria-pressed="false">자동 회전</button>
+      </div>
+      <div class="controls" id="sysControls" hidden>
+        <div class="group" id="sysSpeed">
+          <span class="lbl">행성계 시간</span>
+          <button class="chip" type="button" data-days="1" aria-pressed="false">1일/초</button>
+          <button class="chip" type="button" data-days="20" aria-pressed="true">20일/초</button>
+          <button class="chip" type="button" data-days="365" aria-pressed="false">1년/초</button>
+          <button class="chip" type="button" data-days="3650" aria-pressed="false">10년/초</button>
+        </div>
+        <button class="btn" type="button" id="sysBack">지도로 돌아가기</button>
+      </div>
+
+      <section class="scatter">
+        <h2>외계행성 5천 개의 분포</h2>
+        <p class="note">가로는 공전 주기, 세로는 반지름입니다. 색은 발견 방법(<b style="color:#2a78d6">통과</b> · <b style="color:#eb6834">시선 속도</b> · <b style="color:#d55181">직접 촬영</b> · <b style="color:#1baf7a">미세 중력렌즈</b> · <b style="color:#eda100">기타</b>), 흐린 점은 질량에서 반지름을 추정한 행성입니다. 회색 띠는 1.5–2 R⊕의 ‘반지름 골짜기’(Fulton 외 2017), 검은 점은 태양계 행성입니다. 점을 누르면 그 행성계로 갑니다.</p>
+        <div class="scat-wrap"><canvas id="scat" aria-label="외계행성 주기–반지름 분포"></canvas></div>
+      </section>
+    </div>
+
+    <aside class="panel">
+      <section class="card" id="infoCard" hidden>
+        <h2>고른 천체</h2>
+        <h3 id="icTitle"></h3>
+        <p class="sub" id="icSub"></p>
+        <dl class="readouts" id="icRows"></dl>
+        <p class="note" id="icText"></p>
+        <div class="row">
+          <button class="btn primary" type="button" id="flyBtn">여기로 날아가기</button>
+          <button class="btn" type="button" id="icSystem" hidden>행성계 보기</button>
+        </div>
+      </section>
+      <section class="card" id="sysCard" hidden>
+        <h2>행성계</h2>
+        <h3 id="scName"></h3>
+        <dl class="readouts" id="scStar"></dl>
+        <div class="tbl-wrap"><table class="pl" id="scPlanets"></table></div>
+        <p class="note" id="scNote"></p>
+      </section>
+      <section>
+        <h2>보이는 것</h2>
+        <div class="layers" id="layerBox">
+          <label><input type="checkbox" data-layer="stars" checked> 별</label>
+          <label><input type="checkbox" data-layer="hosts" checked> 외계행성계 (초록 고리)</label>
+          <label><input type="checkbox" data-layer="mw" checked> 우리 은하 모형</label>
+          <label><input type="checkbox" data-layer="gals" checked> 은하</label>
+          <label><input type="checkbox" data-layer="named" checked> 성운·성단·은하단 이름</label>
+          <label><input type="checkbox" data-layer="shells" checked> 관측 가능한 우주의 경계</label>
+        </div>
+      </section>
+      <section>
+        <h2>들어 있는 자료</h2>
+        <dl class="readouts" id="stats"></dl>
+      </section>
+    </aside>
+  </div>
+
+  <section class="guide">
+    <div>
+      <h3>한 장의 지도, 26자릿수</h3>
+      <p>가장 작은 축척(수 AU)과 가장 큰 축척(관측 가능한 우주, 약 140억 파섹)은 10²⁰배 넘게 차이 납니다. 위치를 배정밀도로 들고, GPU에는 카메라 기준 상대 위치만 큰 값과 나머지 값 두 개의 float로 나눠 보내 떨림 없이 확대합니다.</p>
+    </div>
+    <div>
+      <h3>무엇이 실제이고 무엇이 모형인가</h3>
+      <p>별 위치·밝기·색, 외계행성의 궤도, 은하의 위치·크기·기울기, 성단과 위성은하의 거리는 관측 목록 값입니다. 우리 은하의 나선팔과 별 분포는 측정으로 만든 모형이고(우리는 은하 안에 있어 전체를 찍을 수 없습니다), 은하 판의 무늬와 외계행성계의 궤도 방향은 보기 위한 그림입니다.</p>
+    </div>
+    <div>
+      <h3>거리 재기</h3>
+      <p>가까운 별은 시차, 성단과 가까운 은하는 세페이드·TRGB 같은 표준 촉광, 먼 은하는 적색편이를 Planck 2018 우주론의 공동 거리로 바꿔 놓았습니다. 처녀자리·화로자리 은하단 은하는 은하단 안 운동 때문에 적색편이가 거리를 잘 나타내지 못해 은하단 평균 거리에 두었습니다.</p>
+    </div>
+    <div>
+      <h3>관측 가능한 우주의 경계</h3>
+      <p>가장 바깥 껍질은 우주배경복사(z ≈ 1090)와 입자 지평선입니다. 빛이 138억 년 동안 왔지만 그동안 공간이 팽창해서, 그 빛을 낸 곳은 지금 약 460억 광년 떨어져 있습니다.</p>
+    </div>
+  </section>
+
+  <section class="refs">
+    <h3>자료 출처</h3>
+    <ol>
+      <li>HYG 별 목록 v4.1 (Hipparcos, Yale Bright Star, Gliese 통합) — astronexus/HYG-Database, CC BY-SA 4.0.</li>
+      <li>Open Exoplanet Catalogue — Rein (2012), github.com/OpenExoplanetCatalogue, MIT.</li>
+      <li>OpenNGC (NGC·IC 목록, 시선 속도·적색편이 포함) — Mattia Verga, github.com/mattiaverga/OpenNGC, CC BY-SA 4.0.</li>
+      <li>Harris (1996, 2010판), Catalog of Parameters for Milky Way Globular Clusters, AJ 112, 1487.</li>
+      <li>McConnachie (2012), The Observed Properties of Dwarf Galaxies in and around the Local Group, AJ 144, 4.</li>
+      <li>Reid et al. (2019), Trigonometric Parallaxes of High-mass Star-forming Regions, ApJ 885, 131.</li>
+      <li>Bland-Hawthorn & Gerhard (2016), The Galaxy in Context, ARA&amp;A 54, 529 · GRAVITY Collaboration (2019), A&amp;A 625, L10.</li>
+      <li>Tully et al. (2014), The Laniakea supercluster of galaxies, Nature 513, 71.</li>
+      <li>Chen & Kipping (2017), Probabilistic Forecasting of the Masses and Radii of Other Worlds, ApJ 834, 17.</li>
+      <li>Kopparapu et al. (2013), Habitable Zones around Main-sequence Stars, ApJ 765, 131 · Fulton et al. (2017), AJ 154, 109.</li>
+      <li>Standish (1992), Keplerian Elements for Approximate Positions of the Major Planets (JPL) · Planck Collaboration (2020), A&amp;A 641, A6.</li>
+    </ol>
+  </section>
+</div>
+<script type="module" src="/src/atlas/main.ts"></script>
+</body>
+</html>

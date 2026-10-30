@@ -15,6 +15,8 @@ export interface ShapeDef {
   text: string;
   num: string;
   build(): Geometry4;
+  /** 시간에 따라 꼭짓점을 움직이는 도형 (반환값: 화면에 표시할 매개변수) */
+  animate?(time: number, v: Vec4[]): number;
 }
 
 /** 회전 평면: [축 i, 축 j, 이름]. 4차원에는 평면이 C(4,2) = 6개 */
@@ -99,6 +101,49 @@ export const SHAPES = {
         e.push([i * N + j, i * N + (j + 1) % N]);
       }
       return { v: normalize(v), e, dense: true };
+    },
+  },
+  hopf: {
+    label: "3-구면 (호프 올)",
+    text: "4차원 공의 껍질인 3-구면을 서로 겹치지 않는 원들로 빈틈없이 채운 모습(호프 올)입니다. 어떤 두 원도 사슬처럼 한 번씩 엮여 있습니다. 고차원 블랙홀 우주론은 4차원 공간 속 블랙홀의 3차원 경계(사건 지평선) 같은 껍질이 우리 우주일 수 있다고 봅니다(Pourhasan, Afshordi & Mann 2014).",
+    num: "원 26개 · 선분 1,248",
+    build() {
+      const v: Vec4[] = [], e: Edge[] = [], S = 48;
+      const fiber = (eta: number, alpha: number) => {
+        const base = v.length;
+        for (let k = 0; k < S; k++) {
+          const t = 2 * Math.PI * k / S;
+          v.push([Math.cos(eta) * Math.cos(t), Math.cos(eta) * Math.sin(t), Math.sin(eta) * Math.cos(t + alpha), Math.sin(eta) * Math.sin(t + alpha)]);
+          e.push([base + k, base + (k + 1) % S]);
+        }
+      };
+      for (const eta of [Math.PI / 8, Math.PI / 4, 3 * Math.PI / 8]) for (let j = 0; j < 8; j++) fiber(eta, 2 * Math.PI * j / 8);
+      fiber(0, 0); fiber(Math.PI / 2, 0);
+      return { v, e, dense: true };
+    },
+  },
+  brane: {
+    label: "브레인 충돌",
+    text: "3차원 공간 두 장(브레인)이 보이지 않는 네 번째 방향 W로 떨어져 떠 있다가 다가와 부딪칩니다. 에크파이로틱·순환 우주론(Khoury, Ovrut, Steinhardt & Turok 2001; Steinhardt & Turok 2002)은 이 충돌이 빅뱅이고, 충돌과 분리가 되풀이된다고 봅니다. 색이 W 위치이고, 두 격자가 하나로 겹치는 순간이 충돌입니다.",
+    num: "브레인 2장 · 격자 3×3×3 · 선분 108",
+    build() {
+      const v: Vec4[] = [], e: Edge[] = [];
+      for (const s of [-1, 1]) {
+        const base = v.length, id = (i: number, j: number, k: number) => base + (i * 3 + j) * 3 + k;
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) v.push([(i - 1) * 0.62, (j - 1) * 0.62, (k - 1) * 0.62, s * 0.8]);
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
+          if (i < 2) e.push([id(i, j, k), id(i + 1, j, k)]);
+          if (j < 2) e.push([id(i, j, k), id(i, j + 1, k)]);
+          if (k < 2) e.push([id(i, j, k), id(i, j, k + 1)]);
+        }
+      }
+      return { v, e };
+    },
+    animate(time: number, v: Vec4[]) {
+      // 8초 주기로 멀어졌다 다가와 부딪침
+      const d = 0.85 * Math.abs(Math.cos(Math.PI * time / 8));
+      for (let i = 0; i < v.length; i++) v[i][3] = (i < 27 ? -1 : 1) * d;
+      return d;
     },
   },
 } satisfies Record<string, ShapeDef>;

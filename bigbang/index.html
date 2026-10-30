@@ -51,6 +51,22 @@
         </div>
       </div>
       <p class="note" id="clockNote"></p>
+      <div class="controls">
+        <div class="group" id="fateChips">
+          <span class="lbl">오늘 이후</span>
+          <button class="chip" type="button" data-fate="none" aria-pressed="false">오늘에서 멈춤</button>
+          <button class="chip" type="button" data-fate="lcdm" aria-pressed="true">영원한 팽창 (ΛCDM)</button>
+          <button class="chip" type="button" data-fate="desi" aria-pressed="false">약해지는 암흑에너지 (DESI)</button>
+          <button class="chip" type="button" data-fate="crunch" aria-pressed="false">빅 크런치</button>
+          <button class="chip" type="button" data-fate="rip" aria-pressed="false">빅 립</button>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="check"><input type="checkbox" id="cyclicBox" disabled> 순환 우주 (크런치 뒤 반등)</label>
+        <label class="check"><input type="checkbox" id="seedBox" checked> 다음 순환도 같은 초기 조건 (기억 복원)</label>
+        <label class="check"><input type="checkbox" id="noCenterBox"> 중심 없음 보기 (점을 눌러 관측자 고르기)</label>
+      </div>
+      <p class="note" id="cycleNote"></p>
 
       <section class="clocks">
         <h2>같은 역사, 세 개의 시계</h2>
@@ -60,6 +76,19 @@
           <div class="tip" id="tip" hidden></div>
         </div>
         <dl class="readouts compare" id="share"></dl>
+      </section>
+
+      <section class="fates">
+        <h2>우주의 미래: 네 가지 시나리오</h2>
+        <p class="note">오늘까지는 모두 같은 Planck 2018 역사이고, 그 뒤는 암흑에너지가 무엇이냐에 따라 갈라집니다. 그래프의 곡선을 누르면 그 시나리오의 그 시점으로 갑니다.</p>
+        <div class="fate-canvas"><canvas id="fateCv" aria-label="네 가지 시나리오의 우주 크기 a(t)"></canvas></div>
+        <div class="legend">
+          <span><i style="background:#2a78d6"></i>영원한 팽창 (ΛCDM)</span>
+          <span><i style="background:#1baf7a"></i>약해지는 암흑에너지 (DESI w₀wₐ)</span>
+          <span><i style="background:#eb6834"></i>빅 크런치 (축이온 + 음의 Λ)</span>
+          <span><i style="background:#d55181"></i>빅 립 (w = −1.5)</span>
+        </div>
+        <div class="fate-info" id="fateInfo"></div>
       </section>
     </div>
 
@@ -109,6 +138,22 @@
     <div>
       <h3>보통 시계</h3>
       <p>달력처럼 같은 간격으로 흐르는 시간입니다. 원소 합성, 우주배경복사, 첫 별까지가 모두 막대 왼쪽 끝 몇 픽셀 안에 들어갑니다. 우리가 익숙한 시계로는 초기 우주가 ‘거의 없었던 것’처럼 보입니다.</p>
+    </div>
+    <div>
+      <h3>수축하면 팽창 시계는 거꾸로 간다</h3>
+      <p>빅 크런치를 고르면 팽창 최대 이후 a가 줄어듭니다. 그때 ‘팽창 시계’ 막대의 표시는 왼쪽으로 되돌아가지만, 우주 시간 t(보통·로그 시계)는 계속 앞으로 갑니다. a가 같은 두 순간을 팽창 시계로는 구별할 수 없어서, 우주론은 우주 시간이나 엔트로피를 시간의 기준으로 씁니다.</p>
+    </div>
+    <div>
+      <h3>빅 크런치에서 원소가 다시 압축될까</h3>
+      <p>수축하면 빛이 다시 데워져 3000 K에서 원자가 이온화되고, 약 0.1 MeV에서 원자핵이, 156 MeV에서 양성자·중성자가 녹습니다. 빅뱅의 역순이지만 똑같은 되감기는 아닙니다. 이 모형에서는 축이온 장의 운동 에너지가 수축 중에 a⁻⁶로 커져 마지막 순간을 지배합니다.</p>
+    </div>
+    <div>
+      <h3>중심이 없는 팽창</h3>
+      <p>‘중심 없음 보기’를 켜고 아무 점이나 누르면, 그 점에서 본 다른 점들이 모두 거리에 비례하는 속도(v = H·d)로 멀어집니다. 어느 점을 골라도 똑같습니다. 빅뱅은 공간 안의 폭발이 아니라 공간 자체의 팽창이라서 특별한 중심이 없습니다. 수축할 때는 화살표가 안쪽을 향합니다.</p>
+    </div>
+    <div>
+      <h3>순환과 기억 (포앵카레 재귀)</h3>
+      <p>순환 우주를 켜면 크런치 뒤 반등해 새 우주가 시작됩니다. 같은 초기 조건을 고르면 똑같은 우주망이 다시 생기고(패턴 동일성), 끄면 다른 요동에서 다른 우주가 자랍니다. 실제로 같은 상태가 우연히 되돌아오려면 관측 가능한 우주의 엔트로피(약 10¹⁰⁴ k_B, Egan & Lineweaver 2010)로 보아 약 10^(10¹⁰⁴)년이 걸립니다.</p>
     </div>
     <div>
       <h3>계산과 한계</h3>
