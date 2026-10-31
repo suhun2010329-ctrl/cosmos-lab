@@ -33,7 +33,7 @@ export function starColor(bv: number): RGB {
 // ---------- 별 (HYG v4.1) ----------
 export interface Stars {
   n: number;
-  /** x, y, z [pc], 절대등급, B−V */
+  /** 별 하나에 9개: x, y, z [pc], 절대등급, B−V, vx, vy, vz [pc/년], 깃발 (광도 계급 + 16 × 시선 속도 있음) */
   buf: Float32Array;
   named: { i: number; name: string; spect: string; dist: number; mag: number }[];
 }
@@ -89,7 +89,7 @@ export async function loadAtlasData(base: string, onProgress: (msg: string) => v
     // 파일의 은하 위치는 Mpc 단위라서 지도 단위(pc)로 바꿈
     id: g[0], common: g[1], messier: g[2], hubble: g[3], pos: [g[4][0] * 1e6, g[4][1] * 1e6, g[4][2] * 1e6], dMpc: g[5], sizeKpc: g[6], q: g[7], pa: g[8], cz: g[9], bmag: g[10], src: g[11], ra: g[12], dec: g[13],
   }));
-  return { stars: { n: buf.length / 5, buf, named }, systems, galaxies };
+  return { stars: { n: buf.length / 9, buf, named }, systems, galaxies };
 }
 
 type RawSystem = { n: string; p: [number, number, number]; d: number; h: number; s: [number | null, number | null, number | null, number | null, string | null, number | null]; pl: [string, number | null, number | null, number | null, number | null, number | null, number | null, string | null, number | null][] };

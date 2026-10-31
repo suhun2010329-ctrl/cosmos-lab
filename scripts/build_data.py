@@ -8,7 +8,7 @@
 사용: python3 scripts/build_data.py <입력 폴더> public/data
 좌표는 모두 은하 좌표계 직교 좌표 (X: 은하 중심 방향, Y: 회전 방향 l = 90°, Z: 은하 북극), 원점은 태양.
 """
-import csv, gzip, json, math, struct, sys, xml.etree.ElementTree as ET
+import csv, gzip, json, math, re, struct, sys, xml.etree.ElementTree as ET
 
 SRC, OUT = sys.argv[1], sys.argv[2]
 
@@ -42,6 +42,24 @@ def r4(v, n=4):
     return None if v is None else float(f"{v:.{n}g}")
 
 # ---------- 별 (HYG) ----------
+# 별 하나에 float32 9개: x, y, z [pc], 절대등급, B−V, vx, vy, vz [pc/년], 깃발
+# 분광형(문자+숫자) 바로 뒤의 로마 숫자. 'B9pSi'처럼 특이성 표시가 먼저 오면 계급이 없는 것으로 봄. 'IIIb', 'Iab'의 꼬리 글자는 무시
+LUM_RE = re.compile(r"^[OBAFGKMLTCSN]\d*(?:\.\d+)?\s*(III|II|IV|VI|V|I)")
+def lum_class(spect):
+    s = (spect or "").strip()
+    if s.startswith("D"):
+        return 7
+    if s.startswith("sd"):
+        return 6
+    if s.startswith("d"):
+        return 5
+    if s.startswith("g"):
+        return 3
+    m = LUM_RE.match(s)
+    if not m:
+        return 0
+    return {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6}[m.group(1)]
+
 stars, names, hip_idx, hd_idx, gl_idx = [], [], {}, {}, {}
 with open(f"{SRC}/hygdata_v41.csv", encoding="utf-8") as f:
     for r in csv.DictReader(f):
@@ -49,19 +67,31 @@ with open(f"{SRC}/hygdata_v41.csv", encoding="utf-8") as f:
         if d is None or d >= 100000 or r["id"] == "0":
             continue
         x, y, z = eq_to_gal(float(r["x"]), float(r["y"]), float(r["z"]))
+        vx, vy, vz = eq_to_gal(float(r["vx"] or 0), float(r["vy"] or 0), float(r["vz"] or 0))
         ci = fnum(r["ci"])
         i = len(stars)
-        stars.append((x, y, z, float(r["absmag"]), ci if ci is not None else 0.65))
+        # 깃발: 광도 계급(0 모름, 1 초거성 I, 2 II, 3 거성 III, 4 준거성 IV, 5 주계열 V, 6 준왜성 VI, 7 백색왜성) + 16 × 시선 속도 있음
+        flags = lum_class(r["spect"]) + (16 if fnum(r["rv"]) else 0)
+        stars.append((x, y, z, float(r["absmag"]), ci if ci is not None else 0.65, vx, vy, vz, float(flags)))
         if r["hip"]: hip_idx[r["hip"]] = i
         if r["hd"]: hd_idx[r["hd"]] = i
         if r["gl"]: gl_idx[r["gl"].replace(" ", "")] = i
         mag = fnum(r["mag"]) or 99
         label = r["proper"] or (f'{r["bayer"]} {r["con"]}' if r["bayer"] and mag < 6 else "") or (f'{r["flam"]} {r["con"]}' if r["flam"] and mag < 5 else "")
+        # 30 pc 안의 별과 태양 근접 통과 후보(시선 속도 있음, ±1천만 년 안 3 pc 이내)에는 목록 번호 이름을 붙임
+        if not label:
+            v2 = vx * vx + vy * vy + vz * vz
+            tmin = -(x * vx + y * vy + z * vz) / v2 if v2 > 0 else 0
+            dmin = math.sqrt((x + vx * tmin) ** 2 + (y + vy * tmin) ** 2 + (z + vz * tmin) ** 2)
+            near = d < 30 or (fnum(r["rv"]) and abs(tmin) < 1e7 and dmin < 3)
+            if near:
+                gl = r["gl"].replace("Gl ", "Gliese ").strip()
+                label = gl or (f'HIP {r["hip"]}' if r["hip"] else f'HD {r["hd"]}' if r["hd"] else "")
         if label:
             names.append([i, label, r["spect"], r4(d), r4(mag, 3)])
 with open(f"{OUT}/stars.bin", "wb") as f:
     for s in stars:
-        f.write(struct.pack("<5f", *s))
+        f.write(struct.pack("<9f", *s))
 json.dump(names, open(f"{OUT}/star-names.json", "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
 print("stars", len(stars), "named", len(names))
 

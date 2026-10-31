@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>우주 지도</title>
-  <meta name="description" content="별 10만 개, 외계행성 5천 개, 은하 1만 개의 실제 목록으로 만든 행성계부터 관측 가능한 우주까지의 확대 지도">
+  <title>우주 시뮬레이터</title>
+  <meta name="description" content="실제 관측 목록으로 만든 우주 지도에 빅뱅부터 먼 미래까지의 시간축을 합쳐, 위성·행성·항성·은하의 미래를 물리 법칙으로 예측하는 시뮬레이터">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@700;800&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -15,14 +15,15 @@
 <nav class="topnav"><a href="../">← Cosmos Lab</a></nav>
 <div class="wrap">
   <header>
-    <h1>우주 지도</h1>
-    <p>실제 관측 목록으로 만든 하나의 지도입니다. 태양계의 오늘 행성 위치에서 시작해 이웃 별, 외계행성계, 우리 은하, 국부 은하군, 근방 은하 1만 개를 지나 우주배경복사가 보이는 관측 가능한 우주의 끝까지 끊김 없이 확대·축소합니다.</p>
+    <h1>우주 시뮬레이터</h1>
+    <p>우주 지도(별 10만 9천 개 · 외계행성 5천 개 · 은하 1만 개)와 팽창 시계(빅뱅부터 먼 미래까지)를 하나로 합쳤습니다. 시간 막대를 움직이면 위성·행성·항성·은하가 각자의 물리 법칙에 따라 바뀝니다. 그 미래가 관측 자료와 문헌에 비춰 어디까지 믿을 만한지도 함께 보여 줍니다.</p>
   </header>
 
   <div class="layout">
     <div class="main">
       <div class="stage" id="stage">
         <canvas id="cv" aria-label="우주 지도"></canvas>
+        <div class="fog" id="fog"></div>
         <div id="labels"></div>
         <div id="sysLabels"></div>
         <div class="sel-ring" id="selRing" hidden></div>
@@ -33,38 +34,98 @@
         <div class="fade" id="fade"></div>
       </div>
 
+      <section class="timebar" aria-label="시간 조작">
+        <div class="trow">
+          <button class="btn" type="button" id="tBack" aria-pressed="false" title="과거로 재생">◀◀ 과거로</button>
+          <button class="btn" type="button" id="tNow">지금</button>
+          <button class="btn primary" type="button" id="tFwd" aria-pressed="false" title="미래로 재생">미래로 ▶▶</button>
+          <div class="tread"><b id="tReadout"></b><span id="tAge"></span></div>
+        </div>
+        <input type="range" id="tSlider" min="-1" max="1" step="0.0001" value="0" aria-label="시간 (왼쪽 빅뱅 · 가운데 지금 · 오른쪽 먼 미래, 로그 눈금)">
+        <div class="tscale"><span>빅뱅</span><span>지금</span><span>먼 미래</span></div>
+        <div class="group" id="tRate">
+          <span class="lbl">재생 속도</span>
+          <button class="chip" type="button" data-rate="0.0027379" aria-pressed="false">1일/초</button>
+          <button class="chip" type="button" data-rate="0.0821355" aria-pressed="false">30일/초</button>
+          <button class="chip" type="button" data-rate="1" aria-pressed="true">1년/초</button>
+          <button class="chip" type="button" data-rate="100" aria-pressed="false">100년/초</button>
+          <button class="chip" type="button" data-rate="1000" aria-pressed="false">1000년/초</button>
+          <button class="chip" type="button" data-rate="1000000" aria-pressed="false">100만 년/초</button>
+          <button class="chip" type="button" data-rate="100000000" aria-pressed="false">1억 년/초</button>
+          <button class="chip" type="button" data-rate="1000000000" aria-pressed="false">10억 년/초</button>
+          <button class="chip" type="button" data-rate="log" aria-pressed="false">로그 (10배/초)</button>
+        </div>
+        <div class="group" id="tJump">
+          <span class="lbl">바로 가기</span>
+          <button class="chip" type="button" data-jump="bb">빅뱅 직후</button>
+          <button class="chip" type="button" data-jump="cmb">우주배경복사</button>
+          <button class="chip" type="button" data-jump="-4567000000">태양 탄생</button>
+          <button class="chip" type="button" data-jump="-66000000">공룡 멸종</button>
+          <button class="chip" type="button" data-jump="0">지금</button>
+          <button class="chip" type="button" data-jump="100">100년 뒤</button>
+          <button class="chip" type="button" data-jump="50000">5만 년 뒤</button>
+          <button class="chip" type="button" data-jump="1437700">144만 년 뒤 (글리제 710)</button>
+          <button class="chip" type="button" data-jump="1000000000">10억 년 뒤</button>
+          <button class="chip" type="button" data-jump="7585000000">75.85억 년 뒤 (적색거성 정점)</button>
+          <button class="chip" type="button" data-jump="8000000000">80억 년 뒤</button>
+          <button class="chip" type="button" data-jump="100000000000">1000억 년 뒤</button>
+          <button class="chip" type="button" data-jump="1e14">10¹⁴년 뒤</button>
+        </div>
+        <div class="group" id="fateChips">
+          <span class="lbl">우주의 미래</span>
+          <button class="chip" type="button" data-fate="lcdm" aria-pressed="true">영원한 팽창 (ΛCDM)</button>
+          <button class="chip" type="button" data-fate="desi" aria-pressed="false">약해지는 암흑에너지 (DESI)</button>
+          <button class="chip" type="button" data-fate="crunch" aria-pressed="false">빅 크런치</button>
+          <button class="chip" type="button" data-fate="rip" aria-pressed="false">빅 립</button>
+        </div>
+        <p class="note" id="fateNote"></p>
+      </section>
+
       <div class="controls" id="mapControls">
         <div class="group" id="levels"><span class="lbl">축척</span></div>
         <div class="search">
-          <input id="search" type="search" placeholder="찾기: 시리우스, TRAPPIST-1, M31, 처녀자리 은하단…" autocomplete="off" aria-label="천체 찾기">
+          <input id="search" type="search" placeholder="찾기: 시리우스, TRAPPIST-1, M31, 궁수자리 A*, 처녀자리 은하단…" autocomplete="off" aria-label="천체 찾기">
           <div class="sugg" id="sugg" hidden></div>
         </div>
         <button class="chip" type="button" id="autoBtn" aria-pressed="false">자동 회전</button>
       </div>
       <div class="controls" id="sysControls" hidden>
-        <div class="group" id="sysSpeed">
-          <span class="lbl">행성계 시간</span>
-          <button class="chip" type="button" data-days="1" aria-pressed="false">1일/초</button>
-          <button class="chip" type="button" data-days="20" aria-pressed="true">20일/초</button>
-          <button class="chip" type="button" data-days="365" aria-pressed="false">1년/초</button>
-          <button class="chip" type="button" data-days="3650" aria-pressed="false">10년/초</button>
-        </div>
         <button class="btn" type="button" id="sysBack">지도로 돌아가기</button>
+        <span class="note">시간 막대가 행성계에도 그대로 적용됩니다. 행성·위성을 누르면 자세한 특성이 나옵니다.</span>
       </div>
+
+      <section class="charts" id="charts">
+        <h2>예측 그래프</h2>
+        <p class="note">세로 선이 지금 보고 있는 시점입니다. 그래프를 누르면 그 시점으로 갑니다.</p>
+        <div class="chart-grid">
+          <div class="chart"><canvas id="chEcc" aria-label="지구 궤도 이심률 예측"></canvas></div>
+          <div class="chart"><canvas id="chSun" aria-label="태양의 광도와 반지름 예측"></canvas></div>
+          <div class="chart"><canvas id="chLG" aria-label="우리 은하와 안드로메다 거리 예측"></canvas></div>
+          <div class="chart"><canvas id="chEnc" aria-label="태양 근접 통과 별"></canvas></div>
+        </div>
+      </section>
 
       <section class="scatter">
         <h2>외계행성 5천 개의 분포</h2>
-        <p class="note">가로는 공전 주기, 세로는 반지름입니다. 색은 발견 방법(<b style="color:#2a78d6">통과</b> · <b style="color:#eb6834">시선 속도</b> · <b style="color:#d55181">직접 촬영</b> · <b style="color:#1baf7a">미세 중력렌즈</b> · <b style="color:#eda100">기타</b>), 흐린 점은 질량에서 반지름을 추정한 행성입니다. 회색 띠는 1.5–2 R⊕의 ‘반지름 골짜기’(Fulton 외 2017), 검은 점은 태양계 행성입니다. 점을 누르면 그 행성계로 갑니다.</p>
+        <p class="note">가로는 공전 주기, 세로는 반지름입니다. 색은 발견 방법(<b style="color:#2a78d6">통과</b> · <b style="color:#eb6834">시선 속도</b> · <b style="color:#d55181">직접 촬영</b> · <b style="color:#1baf7a">미세 중력렌즈</b> · <b style="color:#eda100">기타</b>), 흐린 점은 질량에서 반지름을 추정한 행성입니다. 회색 띠는 1.5–2 R⊕의 ‘반지름 골짜기’(Fulton 외 2017)입니다. 점을 누르면 그 행성계로 갑니다.</p>
         <div class="scat-wrap"><canvas id="scat" aria-label="외계행성 주기–반지름 분포"></canvas></div>
       </section>
     </div>
 
     <aside class="panel">
+      <section>
+        <h2>이 시점의 예측</h2>
+        <dl class="readouts" id="fcRows"></dl>
+      </section>
       <section class="card" id="infoCard" hidden>
         <h2>고른 천체</h2>
         <h3 id="icTitle"></h3>
         <p class="sub" id="icSub"></p>
         <dl class="readouts" id="icRows"></dl>
+        <div id="icFutureBox" hidden>
+          <h2 class="fut-h">미래 예측</h2>
+          <dl class="readouts" id="icFuture"></dl>
+        </div>
         <p class="note" id="icText"></p>
         <div class="row">
           <button class="btn primary" type="button" id="flyBtn">여기로 날아가기</button>
@@ -77,6 +138,21 @@
         <dl class="readouts" id="scStar"></dl>
         <div class="tbl-wrap"><table class="pl" id="scPlanets"></table></div>
         <p class="note" id="scNote"></p>
+        <div id="missionBox" hidden>
+          <h2 class="fut-h">탐사선 미션 계획 (호만 전이)</h2>
+          <div class="chips" id="msTargets"></div>
+          <dl class="readouts" id="msRows"></dl>
+          <div class="row"><button class="btn primary" type="button" id="msGo" hidden>발사 창으로 이동해 비행 보기</button></div>
+          <div class="tbl-wrap"><table class="pl" id="msVehicles"></table></div>
+          <h2 class="fut-h">지구 둘레 인공위성</h2>
+          <dl class="readouts" id="msSats"></dl>
+          <p class="note credit">궤도 전이 공식·발사체 자료: Space Engineering Pack — Original work by IDEAMAX Skills Factory, Creator: Dimitar Georgiev - Biko (<a href="https://ideamax.eu">ideamax.eu</a> · <a href="https://biko.bg">biko.bg</a> · <a href="https://github.com/devideamax">github.com/devideamax</a>), MIT + Attribution.</p>
+        </div>
+      </section>
+      <section>
+        <h2>다가오는 사건 · 지나간 사건</h2>
+        <ol class="events" id="events"></ol>
+        <p class="note" id="evDetail">사건을 누르면 그 시점으로 가고 설명이 여기에 나옵니다.</p>
       </section>
       <section>
         <h2>보이는 것</h2>
@@ -85,7 +161,7 @@
           <label><input type="checkbox" data-layer="hosts" checked> 외계행성계 (초록 고리)</label>
           <label><input type="checkbox" data-layer="mw" checked> 우리 은하 모형</label>
           <label><input type="checkbox" data-layer="gals" checked> 은하</label>
-          <label><input type="checkbox" data-layer="named" checked> 성운·성단·은하단 이름</label>
+          <label><input type="checkbox" data-layer="named" checked> 성운·성단·은하단·블랙홀 이름</label>
           <label><input type="checkbox" data-layer="shells" checked> 관측 가능한 우주의 경계</label>
         </div>
       </section>
@@ -98,37 +174,37 @@
 
   <section class="guide">
     <div>
-      <h3>한 장의 지도, 26자릿수</h3>
-      <p>가장 작은 축척(수 AU)과 가장 큰 축척(관측 가능한 우주, 약 140억 파섹)은 10²⁰배 넘게 차이 납니다. 위치를 배정밀도로 들고, GPU에는 카메라 기준 상대 위치만 큰 값과 나머지 값 두 개의 float로 나눠 보내 떨림 없이 확대합니다.</p>
+      <h3>무엇을 어떻게 예측하나</h3>
+      <p><b>행성·위성</b>: 케플러 방정식(그날의 위치), 라플라스–라그랑주 영년 섭동(수백만 년의 궤도 변화, 지구 이심률 0–0.058), 달의 조석 후퇴. <b>태양</b>: 주계열 광도 증가 → 적색거성(75.9억 년 뒤) → 백색왜성. <b>별</b>: 고유 운동 + 시선 속도로 위치를, 질량으로 수명과 최후를 계산합니다. <b>은하</b>: 우리 은하·안드로메다·대마젤란은하는 N체 궤도와 역학적 마찰로, 나머지는 우주 팽창으로 움직입니다.</p>
+    </div>
+    <div>
+      <h3>예측의 한계</h3>
+      <p>태양계는 혼돈계라 약 5천만 년 너머의 행성 위치는 원리적으로 예측할 수 없습니다(Laskar 1989). 별의 직선 운동은 약 1천만 년까지만 맞고, 나이를 모르는 별의 죽음은 확률로만 말할 수 있습니다. 안드로메다와의 병합은 관측 불확실성이 커서 몬테카를로 확률로 보여 줍니다. 우주의 먼 미래는 암흑에너지에 달려 있어 네 가지 시나리오로 나눴습니다.</p>
+    </div>
+    <div>
+      <h3>팽창 시계와 합친 방식</h3>
+      <p>시간 막대의 왼쪽 끝은 빅뱅입니다. 과거로 가면 은하 사이 거리가 척도 인자 a(t)만큼 줄고, 하늘은 그때의 우주배경복사 온도로 빛납니다. 38만 년 전(3,000 K)보다 앞은 빛이 갇힌 플라스마라서 아무것도 보이지 않습니다. 미래로 가면 고른 시나리오에 따라 은하들이 멀어지거나(팽창) 다시 모입니다(크런치).</p>
     </div>
     <div>
       <h3>무엇이 실제이고 무엇이 모형인가</h3>
-      <p>별 위치·밝기·색, 외계행성의 궤도, 은하의 위치·크기·기울기, 성단과 위성은하의 거리는 관측 목록 값입니다. 우리 은하의 나선팔과 별 분포는 측정으로 만든 모형이고(우리는 은하 안에 있어 전체를 찍을 수 없습니다), 은하 판의 무늬와 외계행성계의 궤도 방향은 보기 위한 그림입니다.</p>
-    </div>
-    <div>
-      <h3>거리 재기</h3>
-      <p>가까운 별은 시차, 성단과 가까운 은하는 세페이드·TRGB 같은 표준 촉광, 먼 은하는 적색편이를 Planck 2018 우주론의 공동 거리로 바꿔 놓았습니다. 처녀자리·화로자리 은하단 은하는 은하단 안 운동 때문에 적색편이가 거리를 잘 나타내지 못해 은하단 평균 거리에 두었습니다.</p>
-    </div>
-    <div>
-      <h3>관측 가능한 우주의 경계</h3>
-      <p>가장 바깥 껍질은 우주배경복사(z ≈ 1090)와 입자 지평선입니다. 빛이 138억 년 동안 왔지만 그동안 공간이 팽창해서, 그 빛을 낸 곳은 지금 약 460억 광년 떨어져 있습니다.</p>
+      <p>별의 위치·밝기·색·속도, 외계행성의 궤도, 은하의 위치·크기·기울기, 행성·위성의 물리량은 관측값입니다. 우리 은하의 나선팔, 국부 은하군 궤도의 질량 분포, 은하 판의 무늬, 외계행성계의 궤도 방향은 모형이나 보기 위한 그림입니다.</p>
     </div>
   </section>
 
   <section class="refs">
-    <h3>자료 출처</h3>
+    <h3>자료와 계산의 출처</h3>
     <ol>
-      <li>HYG 별 목록 v4.1 (Hipparcos, Yale Bright Star, Gliese 통합) — astronexus/HYG-Database, CC BY-SA 4.0.</li>
-      <li>Open Exoplanet Catalogue — Rein (2012), github.com/OpenExoplanetCatalogue, MIT.</li>
-      <li>OpenNGC (NGC·IC 목록, 시선 속도·적색편이 포함) — Mattia Verga, github.com/mattiaverga/OpenNGC, CC BY-SA 4.0.</li>
-      <li>Harris (1996, 2010판), Catalog of Parameters for Milky Way Globular Clusters, AJ 112, 1487.</li>
-      <li>McConnachie (2012), The Observed Properties of Dwarf Galaxies in and around the Local Group, AJ 144, 4.</li>
-      <li>Reid et al. (2019), Trigonometric Parallaxes of High-mass Star-forming Regions, ApJ 885, 131.</li>
-      <li>Bland-Hawthorn & Gerhard (2016), The Galaxy in Context, ARA&amp;A 54, 529 · GRAVITY Collaboration (2019), A&amp;A 625, L10.</li>
-      <li>Tully et al. (2014), The Laniakea supercluster of galaxies, Nature 513, 71.</li>
-      <li>Chen & Kipping (2017), Probabilistic Forecasting of the Masses and Radii of Other Worlds, ApJ 834, 17.</li>
-      <li>Kopparapu et al. (2013), Habitable Zones around Main-sequence Stars, ApJ 765, 131 · Fulton et al. (2017), AJ 154, 109.</li>
-      <li>Standish (1992), Keplerian Elements for Approximate Positions of the Major Planets (JPL) · Planck Collaboration (2020), A&amp;A 641, A6.</li>
+      <li>HYG 별 목록 v4.1 — astronexus/HYG-Database, CC BY-SA 4.0 · Open Exoplanet Catalogue — Rein (2012), MIT · OpenNGC — Mattia Verga, CC BY-SA 4.0.</li>
+      <li>Space Engineering Pack (궤도 전이 공식, 발사체 자료) — Original work by IDEAMAX Skills Factory, Creator: Dimitar Georgiev - Biko, https://ideamax.eu | https://biko.bg | https://github.com/devideamax, MIT + Attribution.</li>
+      <li>Murray & Dermott (1999), Solar System Dynamics, 7장 (영년 섭동) · Laskar (1989), Nature 338, 237 · Laskar 외 (2004), A&amp;A 428, 261.</li>
+      <li>Gough (1981), Solar Physics 74, 21 · Schröder & Smith (2008), MNRAS 386, 155 · Kasting (1988), Icarus 74, 472.</li>
+      <li>Williams & Boggs (2016), Celest. Mech. Dyn. Astron. 126, 89 (달 후퇴 3.82 cm/년).</li>
+      <li>van der Marel 외 (2012; 2019), ApJ 753, 8; ApJ 872, 24 · Sawala 외 (2025), Nature Astronomy · Cautun 외 (2019), MNRAS 483, 2185 · Kallivayalil 외 (2013), ApJ 764, 161.</li>
+      <li>Bailer-Jones 외 (2018), A&amp;A 616, A37 (별의 근접 통과) · Joyce 외 (2020), ApJ 902, 63 (베텔게우스).</li>
+      <li>Kopparapu 외 (2013), ApJ 765, 131 · Chen & Kipping (2017), ApJ 834, 17 · Fulton 외 (2017), AJ 154, 109.</li>
+      <li>Adams & Laughlin (1997), Rev. Mod. Phys. 69, 337 · Loeb (2002), PRD 65, 047301 · Hawking (1975).</li>
+      <li>Luu, Qiu & Tye (2025), JCAP · Caldwell, Kamionkowski & Weinberg (2003), PRL 91, 071301 · DESI (2025) · Planck Collaboration (2020), A&amp;A 641, A6.</li>
+      <li>NASA 행성 자료표 (Williams, NSSDCA) · Event Horizon Telescope (2019, 2022) · El-Badry 외 (2023), MNRAS 518, 1057 · Gaia Collaboration (2024).</li>
     </ol>
   </section>
 </div>

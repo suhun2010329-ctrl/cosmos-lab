@@ -10,19 +10,24 @@ float log10f(float x) { return log(x) * 0.4342944819; }
 
 // ---------- 별 (HYG) : 거리에 따른 겉보기 등급으로 크기·밝기 ----------
 export const STAR_VS = RTE + `
-attribute vec3 aHi; attribute vec3 aLo; attribute float aMag; attribute vec3 aCol;
+attribute vec3 aHi; attribute vec3 aLo; attribute float aMag; attribute vec3 aCol; attribute vec3 aVel; attribute float aLife; attribute float aSun;
 uniform float uMLim; uniform float uFade; uniform float uPx;
+uniform float uDt; uniform float uAge; uniform float uLocal; uniform float uSunMag; uniform vec3 uSunCol;
 varying vec3 vCol; varying float vA;
 void main() {
-  vec3 rel = rte(aHi, aLo);
+  // 직선 운동 (고유 운동 + 시선 속도) : 위치 + 속도 × Δt
+  vec3 rel = rte(aHi, aLo) + aVel * uDt;
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = max(length(rel), 1e-7);
-  float m = aMag + 5.0 * log10f(d / 10.0);
+  float M = aSun > 0.5 ? uSunMag : aMag;
+  float m = M + 5.0 * log10f(d / 10.0);
   float f = pow(10.0, -0.4 * (m - uMLim));
-  vA = clamp(f, 0.0, 1.0) * uFade;
+  // 살아 있을 확률 (나이를 모르므로 남은 수명 범위에 고르게 퍼져 있다고 봄)
+  float alive = aSun > 0.5 ? step(M, 40.0) : clamp(1.0 - max(uAge, 0.0) / aLife, 0.0, 1.0) * uLocal;
+  vA = clamp(f, 0.0, 1.0) * uFade * alive;
   gl_PointSize = (vA > 0.008 && mv.z < 0.0) ? uPx * clamp(1.0 + 1.3 * log(1.0 + f), 1.0, 10.0) : 0.0;
-  vCol = aCol;
+  vCol = aSun > 0.5 ? uSunCol : aCol;
 }`;
 export const STAR_FS = `
 varying vec3 vCol; varying float vA;
@@ -35,12 +40,12 @@ void main() {
 
 // ---------- 외계행성계 표시 (고리) ----------
 export const HOST_VS = RTE + `
-attribute vec3 aHi; attribute vec3 aLo; attribute float aN;
-uniform float uRange; uniform float uPx; uniform float uFade; uniform float uSelIdx;
+attribute vec3 aHi; attribute vec3 aLo; attribute float aN; attribute vec3 aVel;
+uniform float uRange; uniform float uPx; uniform float uFade; uniform float uSelIdx; uniform float uDt;
 attribute float aIdx;
 varying float vA; varying float vSel;
 void main() {
-  vec3 rel = rte(aHi, aLo);
+  vec3 rel = rte(aHi, aLo) + aVel * uDt;
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = length(rel);
@@ -63,20 +68,30 @@ void main() {
 export const GAL_VS = RTE + `
 attribute vec3 gHi; attribute vec3 gLo; attribute vec3 gE1; attribute vec3 gE2; attribute vec4 gP;
 uniform float uMLim; uniform float uScale; uniform vec2 uRes; uniform float uFade; uniform float uMinPx; uniform float uSelIdx;
-attribute float gIdx;
+// 시간: 우주 팽창 배율 uA (= a(t)/a₀), 그룹별 이동 (M31 무리, 마젤란 은하, 은하 중심을 도는 위성), 밀코메다 출현 정도
+uniform float uA; uniform vec3 uM31Off; uniform vec3 uLMCOff; uniform vec3 uGcOff; uniform float uMilk; uniform float uLmcGone;
+attribute float gIdx; attribute float gGroup;
 varying vec2 vUV; varying float vType; varying float vSeed; varying float vA; varying float vPoint; varying float vSel;
 void main() {
   vUV = position.xy; vType = gP.x; vSeed = gP.y; vPoint = 0.0;
   vSel = abs(gIdx - uSelIdx) < 0.5 ? 1.0 : 0.0;
-  vec3 c = rte(gHi, gLo);
+  vec3 c;
+  float grpA = 1.0, dim = 0.0;
+  if (gGroup < 0.5) { c = (gHi * uA - uCamHi) + (gLo * uA - uCamLo) + uGcOff; dim = uA > 1.0 ? 10.0 * log10f(uA) : 0.0; }
+  else if (gGroup < 1.5) c = rte(gHi, gLo) + uGcOff;
+  else if (gGroup < 2.5) { c = rte(gHi, gLo) + uM31Off; grpA = 1.0 - uMilk; }
+  else if (gGroup < 3.5) { c = rte(gHi, gLo) + uLMCOff; grpA = 1.0 - uLmcGone; }
+  else if (gGroup < 4.5) c = rte(gHi, gLo) + uGcOff;
+  else { c = rte(gHi, gLo) + uGcOff; grpA = uMilk; }
+  if (grpA < 0.01) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
   vec4 cv = viewMatrix * vec4(c, 1.0);
   float d = -cv.z;
   if (d <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
   float R = length(gE1);
   float px = R * uScale / d;
-  float m = gP.z + 5.0 * log10f(max(length(c), 1e-6) / 10.0);
+  float m = gP.z + 5.0 * log10f(max(length(c), 1e-6) / 10.0) + dim;
   float f = pow(10.0, -0.4 * (m - uMLim));
-  vA = clamp(f, 0.0, 1.0);
+  vA = clamp(f, 0.0, 1.0) * grpA;
   if (px < 1.5) {
     vA *= uFade;
     vA = max(vA, vSel * uFade);
@@ -86,7 +101,7 @@ void main() {
     gl_Position.xy += position.xy * (2.0 * uMinPx * (1.0 + 2.0 * vSel) / uRes) * gl_Position.w;
     return;
   }
-  vA = max(vA, 0.55 * smoothstep(1.5, 8.0, px)) * uFade;
+  vA = max(vA, 0.55 * smoothstep(1.5, 8.0, px) * grpA) * uFade;
   vec3 w;
   if (gP.w > 0.5) {
     // 타원은하: 화면을 향한 판, 축비 적용
