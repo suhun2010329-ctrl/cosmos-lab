@@ -8,7 +8,8 @@ import { skyColor } from "../shared/color";
 import { GLOBULARS, LARGE_SCALE, LOCAL_GROUP, NEBULAE, SATELLITES, SUN_POS_NOTE, type NamedObject } from "./catalog";
 import { bvToTemp, galLB, hubbleName, hubbleType, loadAtlasData, planetA, planetRadiusEarth, radecToGal, starColor, type AtlasData, type Galaxy } from "./data";
 import { buildMilkyWay, GC_POS } from "./milkyway";
-import { GAL_FS, GAL_VS, HOST_FS, HOST_VS, MW_FS, MW_VS, STAR_FS, STAR_VS } from "./shaders";
+import { GAL_FS, GAL_VS, HOST_FS, HOST_VS, MW_FS, MW_VS, SHELL_FS, SHELL_VS, STAR_FS, STAR_VS } from "./shaders";
+import { lightTravelTable, matrix4, PRESETS4, project4, wMixed, XW, YW, ZW } from "./four";
 import { exoSystem, solarSystem, SystemView, type SysData } from "./system";
 import { aliveProbability, bolometricCorrection, LUM_NAMES, starPhys, STRIDE, type StarPhys } from "./stellar";
 import { dayLength, earthAt, moonDistance, sunAt, totalEclipsePossible } from "./sun";
@@ -80,7 +81,126 @@ function split(arr: ArrayLike<number>, n: number): { hi: Float32Array; lo: Float
   for (let i = 0; i < 3 * n; i++) { hi[i] = Math.fround(arr[i]); lo[i] = arr[i] - hi[i]; }
   return { hi, lo };
 }
-const camU = { uCamHi: { value: new THREE.Vector3() }, uCamLo: { value: new THREE.Vector3() } };
+// 모든 층이 함께 쓰는 유니폼: 회전 중심(카메라 목표)과 4차원 회전·투영
+const camU = {
+  uTgtHi: { value: new THREE.Vector3() }, uTgtLo: { value: new THREE.Vector3() }, uCamOff: { value: new THREE.Vector3() },
+  uR4: { value: new THREE.Matrix4() }, uWk: { value: 1 }, uWTgt: { value: 0 }, uP4: { value: 0 }, uL: { value: 1 }, uTint: { value: 0 },
+};
+
+// ---------- 4차원: (x, y, z, w), w = 빛이 떠난 때 × c ----------
+// 4차원 관측실의 여섯 평면 회전(rotate4)을 그대로 지도에 씀. 회전각이 모두 0이면 보통의 3차원 지도와 같다.
+const four = {
+  ang: [0, 0, 0, 0, 0, 0], spin: false, tint: false, persp: false, wk: 1, M: matrix4([0, 0, 0, 0, 0, 0]),
+  tween: null as null | { t: number; from: number[]; to: number[] },
+};
+const SPIN_SPEEDS = [0, 0, 0.21, 0, 0.13, 0.17];
+const DEG4 = Math.PI / 180;
+let lightTravelPc: (d: number) => number = (d) => d;
+function buildLightTravel(): void {
+  lightTravelPc = lightTravelTable((z) => core.comovingDistance(z), (z) => (TL.t0 - core.tOf(-Math.log10(1 + z))) / YEAR_S);
+}
+function update4(dt: number): void {
+  if (four.tween) {
+    const tw = four.tween;
+    tw.t = Math.min(1, tw.t + dt / 1.1);
+    const e = tw.t * tw.t * (3 - 2 * tw.t);
+    for (let k = 0; k < 6; k++) four.ang[k] = tw.from[k] + (tw.to[k] - tw.from[k]) * e;
+    if (tw.t >= 1) four.tween = null;
+    syncFourUi();
+  } else if (four.spin) {
+    for (let k = 0; k < 6; k++) four.ang[k] = wrapPi(four.ang[k] + SPIN_SPEEDS[k] * dt);
+    syncFourUi();
+  }
+  matrix4(four.ang, four.M);
+  const m = four.M;
+  camU.uR4.value.set(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+  camU.uWk.value = four.wk;
+  camU.uP4.value = four.persp ? 1 : 0;
+  camU.uL.value = cam.r * 3;
+  camU.uTint.value = four.tint ? 1 : 0;
+  camU.uWTgt.value = -lightTravelPc(Math.hypot(cam.target[0], cam.target[1], cam.target[2]));
+}
+function wrapPi(a: number): number { return a - 2 * Math.PI * Math.round(a / (2 * Math.PI)); }
+function is4dActive(): boolean { return wMixed(four.ang) || four.persp; }
+/** 화면에 그리는 것과 같은 4차원 변환 (이름표·고르기용): 태양 기준 위치 p, w → 카메라 기준 3차원 */
+function to4(p: ArrayLike<number>, w: number): [number, number, number] {
+  const q = project4(four.M, p[0] - cam.target[0], p[1] - cam.target[1], p[2] - cam.target[2], (w - camU.uWTgt.value) * four.wk, four.persp ? 1 : 0, camU.uL.value);
+  return [q[0] - (camPos[0] - cam.target[0]), q[1] - (camPos[1] - cam.target[1]), q[2] - (camPos[2] - cam.target[2])];
+}
+/** 4차원 조작 막대를 지금 각도에 맞춤 */
+function syncFourUi(): void {
+  const set = (id: string, k: number) => {
+    const deg = Math.round(wrapPi(four.ang[k]) / DEG4);
+    const el = $<HTMLInputElement>(id);
+    if (document.activeElement !== el) el.value = String(deg);
+    setText(id + "V", (deg > 0 ? "+" : "") + deg + "°");
+  };
+  set("r4XW", XW); set("r4YW", YW); set("r4ZW", ZW);
+  const a = [XW, YW, ZW].map((k) => Math.round(wrapPi(four.ang[k]) / DEG4));
+  document.querySelectorAll<HTMLElement>("#four4 [data-r4]").forEach((b) => {
+    const p = PRESETS4[b.dataset.r4!];
+    b.setAttribute("aria-pressed", String(!four.spin && !four.tween && p.XW === a[0] && p.YW === a[1] && p.ZW === a[2]));
+  });
+  $("r4Spin").setAttribute("aria-pressed", String(four.spin));
+}
+function goPreset4(key: string): void {
+  const p = PRESETS4[key];
+  four.spin = false;
+  const to = four.ang.map((a) => wrapPi(a));
+  to[0] = to[1] = to[3] = 0;
+  to[XW] = p.XW * DEG4; to[YW] = p.YW * DEG4; to[ZW] = p.ZW * DEG4;
+  four.ang = four.ang.map((a) => wrapPi(a));
+  four.tween = { t: 0, from: four.ang.slice(), to };
+  setText("four4Note", p.text);
+}
+/** 4차원 좌표축 표시 (왼쪽 아래): X·Y·Z·W 축을 지금의 4차원 회전과 카메라로 투영 */
+const axCv = $<HTMLCanvasElement>("axes4"), axCtx = axCv.getContext("2d")!;
+const m3 = new THREE.Matrix3(), av = new THREE.Vector3();
+function drawAxes4(): void {
+  const S = 112, d = Math.min(window.devicePixelRatio || 1, 2);
+  if (axCv.width !== S * d) { axCv.width = axCv.height = S * d; }
+  const g = axCtx;
+  g.setTransform(d, 0, 0, d, 0, 0);
+  g.clearRect(0, 0, S, S);
+  const camM = mode === "system" ? sys.camera.matrixWorldInverse : camera.matrixWorldInverse;
+  m3.setFromMatrix4(camM);
+  const M = four.M, cols = ["#ff6b6b", "#5ee08a", "#6ba8ff", "#ff7fd0"], names = ["X", "Y", "Z", "W"];
+  const axes = [0, 1, 2, 3].map((j) => {
+    // 열 j의 공간 부분 (지도 좌표). 행성계 장면은 y가 위인 three 좌표라서 (x, z, −y)로 바꿈
+    const x = M[j], y = M[4 + j], z = M[8 + j];
+    if (mode === "system") av.set(x, z, -y); else av.set(x, y, z);
+    av.applyMatrix3(m3);
+    return { j, sx: av.x, sy: -av.y, z: av.z, len: Math.hypot(av.x, av.y) };
+  }).sort((a, b) => a.z - b.z);
+  const c = S / 2, L = 40;
+  g.font = "600 11px 'IBM Plex Mono', monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.lineWidth = 2; g.lineCap = "round";
+  const placed: [number, number][] = [];
+  const label = (t: string, x: number, y: number) => {
+    // 두 축이 같은 쪽을 가리키면 이름이 겹치므로 옆으로 비킴
+    while (placed.some(([px, py]) => Math.abs(px - x) < 13 && Math.abs(py - y) < 12)) x += 14;
+    placed.push([x, y]); g.fillText(t, x, y);
+  };
+  for (const a of axes) {
+    g.strokeStyle = g.fillStyle = cols[a.j];
+    g.globalAlpha = 0.45 + 0.55 * Math.min(1, a.len);
+    if (a.len < 0.06) {
+      g.beginPath(); g.arc(c, c, 6, 0, 2 * Math.PI); g.stroke();
+      label(names[a.j] + "⊥", c + 18, c + 14);
+      continue;
+    }
+    g.beginPath(); g.moveTo(c, c); g.lineTo(c + a.sx * L, c + a.sy * L); g.stroke();
+    const n = a.len, ox = a.sx / n * 9, oy = a.sy / n * 9;
+    label(names[a.j], c + a.sx * L + ox, c + a.sy * L + oy);
+  }
+  g.globalAlpha = 1;
+}
+function hud4Text(): string {
+  const a = [XW, YW, ZW].map((k) => Math.round(wrapPi(four.ang[k]) / DEG4));
+  const ang = "XW " + a[0] + "° · YW " + a[1] + "° · ZW " + a[2] + "°";
+  const state = wMixed(four.ang) ? ang : is4dActive() ? "w 원근만" : mode === "system" ? "w가 화면에 수직" : "w가 화면에 수직 (3차원 단면)";
+  if (mode === "system") return "4차원 · w = 시간" + (sys.wlYears ? " (세계선 " + fmtYearsShort(sys.wlYears) + ")" : "") + " · " + state;
+  return "4차원 · w = 빛이 떠난 때 × c · " + state;
+}
 const uScale = { value: 1 }, uRes = { value: new THREE.Vector2(1, 1) };
 
 // ---------- 카메라 (배정밀도) ----------
@@ -123,8 +243,9 @@ function updateCamera(dt: number): void {
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   for (let k = 0; k < 3; k++) {
-    const hi = Math.fround(camPos[k]);
-    camU.uCamHi.value.setComponent(k, hi); camU.uCamLo.value.setComponent(k, camPos[k] - hi);
+    const hi = Math.fround(cam.target[k]);
+    camU.uTgtHi.value.setComponent(k, hi); camU.uTgtLo.value.setComponent(k, cam.target[k] - hi);
+    camU.uCamOff.value.setComponent(k, camPos[k] - cam.target[k]);
   }
 }
 
@@ -239,9 +360,10 @@ function buildLayers(): void {
     gals.push({ name: o.name, sub: o.en ?? "", pos: radecToGal(o.ra, o.dec, o.dkpc! * 1000), R: (o.size ?? 1.5) * 1000, type: o.en === "LMC" || o.en === "SMC" || o.kind === "localgroup" ? 1 : 3, absMag: extraMag(o), group: grp, o });
   }
   gals.push({ name: "밀코메다 (예측)", sub: "Milkomeda", pos: [...GC_POS], R: 60000, type: 3, absMag: -22.2, group: 5 });
-  const ng = gals.length, GP = new Float64Array(3 * ng), E1 = new Float32Array(3 * ng), E2 = new Float32Array(3 * ng), gp = new Float32Array(4 * ng), gi = new Float32Array(ng), gg = new Float32Array(ng);
+  const ng = gals.length, GP = new Float64Array(3 * ng), E1 = new Float32Array(3 * ng), E2 = new Float32Array(3 * ng), gp = new Float32Array(4 * ng), gi = new Float32Array(ng), gg = new Float32Array(ng), gw = new Float32Array(ng);
   gals.forEach((e, i) => {
     GP.set(e.pos, 3 * i);
+    gw[i] = -lightTravelPc(Math.hypot(e.pos[0], e.pos[1], e.pos[2]));
     const [a, bb] = diskAxes(e);
     E1.set(a, 3 * i); E2.set(bb, 3 * i);
     gp[4 * i] = e.type; gp[4 * i + 1] = hash01(e.sub || e.name); gp[4 * i + 2] = e.absMag; gp[4 * i + 3] = e.type === 3 ? 1 : 0; gi[i] = i; gg[i] = e.group;
@@ -251,7 +373,7 @@ function buildLayers(): void {
   geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
   geo.setAttribute("gHi", new THREE.InstancedBufferAttribute(gs.hi, 3)); geo.setAttribute("gLo", new THREE.InstancedBufferAttribute(gs.lo, 3));
   geo.setAttribute("gE1", new THREE.InstancedBufferAttribute(E1, 3)); geo.setAttribute("gE2", new THREE.InstancedBufferAttribute(E2, 3));
-  geo.setAttribute("gP", new THREE.InstancedBufferAttribute(gp, 4)); geo.setAttribute("gIdx", new THREE.InstancedBufferAttribute(gi, 1)); geo.setAttribute("gGroup", new THREE.InstancedBufferAttribute(gg, 1));
+  geo.setAttribute("gP", new THREE.InstancedBufferAttribute(gp, 4)); geo.setAttribute("gIdx", new THREE.InstancedBufferAttribute(gi, 1)); geo.setAttribute("gGroup", new THREE.InstancedBufferAttribute(gg, 1)); geo.setAttribute("gW", new THREE.InstancedBufferAttribute(gw, 1));
   geo.instanceCount = ng;
   galMat = new THREE.ShaderMaterial({
     uniforms: { ...camU, uMLim: { value: 20 }, uScale, uRes, uFade: { value: 1 }, uMinPx: { value: 1.6 }, uSelIdx: { value: -1 },
@@ -264,11 +386,12 @@ function buildLayers(): void {
   const mw = buildMilkyWay();
   const mg = new THREE.BufferGeometry();
   mg.setAttribute("position", new THREE.BufferAttribute(mw.pos, 3)); mg.setAttribute("aCol", new THREE.BufferAttribute(mw.col, 4)); mg.setAttribute("aSize", new THREE.BufferAttribute(mw.size, 1));
-  mwMat = new THREE.ShaderMaterial({ uniforms: { uScale, uFade: { value: 1 }, uMinPx: { value: 1.2 } }, vertexShader: MW_VS, fragmentShader: MW_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
+  const mwU = { uOrigin: { value: new THREE.Vector3(...GC_POS) }, uRotZ: { value: 0 } };
+  mwMat = new THREE.ShaderMaterial({ uniforms: { ...camU, ...mwU, uScale, uFade: { value: 1 }, uMinPx: { value: 1.2 } }, vertexShader: MW_VS, fragmentShader: MW_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
   mwPts = new THREE.Points(mg, mwMat); mwPts.frustumCulled = false;
   const dg = new THREE.BufferGeometry();
   dg.setAttribute("position", new THREE.BufferAttribute(mw.dust.pos, 3)); dg.setAttribute("aCol", new THREE.BufferAttribute(mw.dust.col, 4)); dg.setAttribute("aSize", new THREE.BufferAttribute(mw.dust.size, 1));
-  dustMat = new THREE.ShaderMaterial({ uniforms: { uScale, uFade: { value: 1 }, uMinPx: { value: 1.0 } }, vertexShader: MW_VS, fragmentShader: MW_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.NormalBlending });
+  dustMat = new THREE.ShaderMaterial({ uniforms: { ...camU, ...mwU, uScale, uFade: { value: 1 }, uMinPx: { value: 1.0 } }, vertexShader: MW_VS, fragmentShader: MW_FS, transparent: true, depthTest: false, depthWrite: false, blending: THREE.NormalBlending });
   dustPts = new THREE.Points(dg, dustMat); dustPts.frustumCulled = false;
   scene.add(mwPts); scene.add(dustPts);
 
@@ -299,7 +422,9 @@ function buildLayers(): void {
     ["입자 지평선", core.comovingDistance(1e9) * 1e6, "빅뱅 이후 빛이 올 수 있었던 가장 먼 곳. 관측 가능한 우주의 반지름.", 0xc8c8d8],
   ];
   for (const [name, R, note, color] of shellDefs) {
-    const g = new THREE.LineSegments(ring(R), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false }));
+    // 경계 위의 점은 모두 같은 w (그 경계의 빛이 떠난 때): 4차원으로 돌리면 과거 빛원뿔의 단면으로 보임
+    const mat = new THREE.ShaderMaterial({ uniforms: { ...camU, uK: { value: 1 }, uShellW: { value: -lightTravelPc(R) }, uColor: { value: new THREE.Color(color) }, uOpacity: { value: 0.35 } }, vertexShader: SHELL_VS, fragmentShader: SHELL_FS, transparent: true, depthTest: false, depthWrite: false });
+    const g = new THREE.LineSegments(ring(R), mat);
     g.frustumCulled = false; scene.add(g);
     shells.push({ g, R, name, note });
   }
@@ -422,23 +547,19 @@ function updateLayers(): void {
   // 우리 은하: 밀코메다가 되면 원반이 사라짐. 빅뱅 쪽 과거(첫 은하 이전)에도 숨김
   const mwF = layers.mw ? smooth(150, 2500, r) * (1 - smooth(5e6, 6e7, r)) * (1 - 0.85 * now.milk) * visGal : 0;
   mwMat.uniforms.uFade.value = mwF; dustMat.uniforms.uFade.value = mwF * (1 - now.milk);
-  for (const o of [mwPts, dustPts]) {
-    o.position.set(now.gc[0] - camPos[0], now.gc[1] - camPos[1], now.gc[2] - camPos[2]);
-    // 좌표축은 돌지 않으므로 나선팔 무늬는 패턴 속도 Ω_p로 시계 방향 회전 (은하 중심의 위치 이동은 now.gc에 들어 있음)
-    o.rotation.z = -OMEGA_P * time.dt;
-  }
+  // 좌표축은 돌지 않으므로 나선팔 무늬는 패턴 속도 Ω_p로 시계 방향 회전 (은하 중심의 위치 이동은 now.gc에 들어 있음)
+  mwMat.uniforms.uOrigin.value.set(now.gc[0], now.gc[1], now.gc[2]);
+  mwMat.uniforms.uRotZ.value = -OMEGA_P * time.dt;
   mwPts.visible = dustPts.visible = mwF > 0.01;
   starPts.visible = starMat.uniforms.uFade.value > 0.01;
   hostPts.visible = hostMat.uniforms.uFade.value > 0.01;
   galMesh.visible = galMat.uniforms.uFade.value > 0.01;
   for (const s of shells) {
     // 경계는 공동 거리라서 지금 기준. 다른 시점에서는 그 시점의 실제 거리로 늘이거나 줄임
-    const k = Math.min(now.s, 1e12);
-    s.g.position.set(-camPos[0], -camPos[1], -camPos[2]);
-    s.g.scale.setScalar(k);
-    const m = s.g.material as THREE.LineBasicMaterial, R = s.R * k;
-    m.opacity = layers.shells ? 0.4 * smooth(R * 0.02, R * 0.15, r) * (1 - smooth(R * 30, R * 300, r)) : 0;
-    s.g.visible = m.opacity > 0.003;
+    const k = Math.min(now.s, 1e12), u = (s.g.material as THREE.ShaderMaterial).uniforms, R = s.R * k;
+    u.uK.value = k;
+    u.uOpacity.value = layers.shells ? 0.4 * smooth(R * 0.02, R * 0.15, r) * (1 - smooth(R * 30, R * 300, r)) : 0;
+    s.g.visible = u.uOpacity.value > 0.003;
   }
 }
 /** bvToTemp의 역함수 (이분법) */
@@ -453,8 +574,10 @@ interface Cand { name: string; get: () => ArrayLike<number>; pri: number; cls: s
 const labelPool: HTMLDivElement[] = [];
 let shown: { el: HTMLDivElement; c: Cand }[] = [];
 const vtmp = new THREE.Vector3();
-function project(p: ArrayLike<number>): [number, number, number] | null {
-  vtmp.set(p[0] - camPos[0], p[1] - camPos[1], p[2] - camPos[2]).applyMatrix4(camera.matrixWorldInverse);
+/** 태양 기준 위치 p (w를 주지 않으면 빛이 온 거리로) → 화면 좌표. 셰이더와 같은 4차원 변환을 거침 */
+function project(p: ArrayLike<number>, w?: number): [number, number, number] | null {
+  const q = to4(p, w ?? -lightTravelPc(Math.hypot(p[0], p[1], p[2])));
+  vtmp.set(q[0], q[1], q[2]).applyMatrix4(camera.matrixWorldInverse);
   const depth = -vtmp.z;
   if (depth <= 0) return null;
   vtmp.applyMatrix4(camera.projectionMatrix);
@@ -630,7 +753,8 @@ function refreshCard(force = false): void {
   const pos = selPos(s), d = Math.hypot(pos[0], pos[1], pos[2]);
   let sub = "", rows = "", fut = "", text = "", canSystem = false;
   const lt = d / LY_PC;
-  const common = s.kind === "body" ? "" : row("태양에서 거리" + (time.dt ? " (그 시점)" : ""), fmtPc(d) + "<small>" + fmtPcUnit(d) + " · 빛으로 " + (lt < 1 ? (lt * 365.25).toPrecision(3) + "일" : fmtYearsShort(lt)) + "</small>") + (d > 0 ? row("은하 좌표", lbText(pos)) : "");
+  const common = s.kind === "body" ? "" : row("태양에서 거리" + (time.dt ? " (그 시점)" : ""), fmtPc(d) + "<small>" + fmtPcUnit(d) + " · 빛으로 " + (lt < 1 ? (lt * 365.25).toPrecision(3) + "일" : fmtYearsShort(lt)) + "</small>") + (d > 0 ? row("은하 좌표", lbText(pos)) : "")
+    + (d > 0 ? row("4차원 좌표 w", "−" + fmtPc(lightTravelPc(d)) + "<small>지금 보이는 빛이 " + (lightTravelPc(d) / LY_PC < 1 ? (lightTravelPc(d) / LY_PC * 365.25).toPrecision(3) + "일" : fmtYearsShort(lightTravelPc(d) / LY_PC)) + " 전에 떠남 · 지도에서 w 축 자리</small>") : "");
   if (s.kind === "sun") {
     sub = "G2V 주계열성 (지금)"; canSystem = true;
     const st = sunAt(time.dt / 1e9);
@@ -758,6 +882,8 @@ function systemFor(s: Sel): SysData | null {
   sysHost = ps.hyg >= 0 ? { life: phys[ps.hyg].tRemMax } : null;
   return exoSystem(ps);
 }
+const DEF4_MAP = "지도의 모든 점은 (x, y, z, <b>w</b>)입니다. <b>w</b> = 그 천체에서 지금 보이는 빛이 떠난 때 × 빛의 속도";
+const DEF4_SYS = "행성계 장면의 모든 점은 (x, y, z, <b>w</b>)입니다. <b>w</b> = 시간. w를 돌려 넣으면 행성은 태양의 곧은 세계선을 감는 나선(세계선)이 됩니다";
 function enterSystem(d: SysData): void {
   $("fade").classList.add("on");
   setTimeout(() => {
@@ -767,6 +893,7 @@ function enterSystem(d: SysData): void {
     mode = "system";
     labelsEl.hidden = true;
     $("mapControls").hidden = true; $("sysControls").hidden = false;
+    setText("four4Def", DEF4_SYS, true);
     showSysCard(d);
     $("missionBox").hidden = !d.real;
     if (d.real) { sys.setSatellites(SATELLITES_EARTH, JWST_KM); mission = null; buildMissionUi(); }
@@ -782,6 +909,7 @@ function exitSystem(): void {
     sys.clear();
     labelsEl.hidden = false;
     $("mapControls").hidden = false; $("sysControls").hidden = true; $("sysCard").hidden = true;
+    setText("four4Def", DEF4_MAP, true);
     if (selected?.kind === "body") select({ kind: "sun", name: "태양" });
     setTimeout(() => $("fade").classList.remove("on"), 60);
   }, 320);
@@ -1137,7 +1265,14 @@ stage.addEventListener("pointermove", (e) => {
   const p = pointers.get(e.pointerId);
   if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y;
-  if (pointers.size === 1) {
+  if (pointers.size === 1 && e.shiftKey) {
+    // Shift + 드래그: 가로 = XW 평면, 세로 = ZW 평면 회전
+    four.spin = false; four.tween = null;
+    four.ang[XW] = wrapPi(four.ang[XW] + dx * 0.008);
+    four.ang[ZW] = wrapPi(four.ang[ZW] - dy * 0.008);
+    syncFourUi();
+    p.x = e.clientX; p.y = e.clientY;
+  } else if (pointers.size === 1) {
     if (mode === "system") { sys.theta += dx * 0.006; sys.phi = clamp(sys.phi - dy * 0.006, 0.05, Math.PI - 0.05); }
     else { cam.theta -= dx * 0.006; cam.phi = clamp(cam.phi - dy * 0.006, 0.02, Math.PI - 0.02); }
     p.x = e.clientX; p.y = e.clientY;
@@ -1157,6 +1292,14 @@ function endPointer(e: PointerEvent): void {
     else pickBody(x, y);
   }
   downAt = null;
+}
+/** 행성계 장면의 선택 고리: 고른 행성·위성(또는 별)에 맞춤 */
+function placeSysRing(): void {
+  const ring = $("selRing");
+  const pos = selected?.kind === "body" ? sys.bodies().find((b) => b.name === selected!.name && !b.gone)?.pos : selected?.kind === "sun" || selected?.kind === "host" ? new THREE.Vector3() : undefined;
+  const v = pos ? pos.clone().project(sys.camera) : null;
+  ring.hidden = !v || v.z > 1 || Math.abs(v.x) > 1.02 || Math.abs(v.y) > 1.02;
+  if (v && !ring.hidden) ring.style.transform = "translate(" + ((v.x * 0.5 + 0.5) * W).toFixed(1) + "px," + ((-v.y * 0.5 + 0.5) * H).toFixed(1) + "px)";
 }
 /** 행성계 장면에서 행성·위성 고르기 */
 function pickBody(x: number, y: number): void {
@@ -1183,6 +1326,28 @@ $("flyBtn").addEventListener("click", () => { if (selected) flyToSel(selected); 
 $("icSystem").addEventListener("click", () => { if (!selected) return; const d = systemFor(selected); if (d) enterSystem(d); });
 $("sysBack").addEventListener("click", exitSystem);
 $("autoBtn").addEventListener("click", (e) => { cam.auto = !cam.auto; (e.currentTarget as HTMLElement).setAttribute("aria-pressed", String(cam.auto)); });
+// 4차원 조작
+document.querySelectorAll<HTMLElement>("#four4 [data-r4]").forEach((b) => b.addEventListener("click", () => goPreset4(b.dataset.r4!)));
+([["r4XW", XW], ["r4YW", YW], ["r4ZW", ZW]] as [string, number][]).forEach(([id, k]) => {
+  $<HTMLInputElement>(id).addEventListener("input", (e) => {
+    four.spin = false; four.tween = null;
+    four.ang[k] = +(e.currentTarget as HTMLInputElement).value * DEG4;
+    syncFourUi();
+  });
+});
+$("r4Spin").addEventListener("click", () => {
+  four.spin = !four.spin; four.tween = null;
+  setText("four4Note", four.spin ? "XW·YW·ZW 세 평면을 서로 다른 빠르기로 돌립니다. 3차원 지도가 4차원 안에서 뒤집히며 w(빛의 나이)가 공간으로 들어왔다 나갑니다." : "회전을 멈췄습니다. 막대로 각도를 바꾸거나 시점을 고르세요.");
+  syncFourUi();
+});
+$("r4Wk").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>("[data-wk]");
+  if (!b) return;
+  four.wk = +b.dataset.wk!;
+  $("r4Wk").querySelectorAll("[data-wk]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+});
+$<HTMLInputElement>("r4Tint").addEventListener("change", (e) => { four.tint = (e.currentTarget as HTMLInputElement).checked; });
+$<HTMLInputElement>("r4Persp").addEventListener("change", (e) => { four.persp = (e.currentTarget as HTMLInputElement).checked; });
 $("layerBox").addEventListener("change", (e) => {
   const t = e.target as HTMLInputElement;
   (layers as Record<string, boolean>)[t.dataset.layer!] = t.checked;
@@ -1213,6 +1378,7 @@ function scaleName(r: number): string {
   return "관측 가능한 우주";
 }
 function updateHud(): void {
+  setText("hud4", hud4Text());
   if (mode === "system") {
     const d = sys.data!;
     setText("hudScale", d.name);
@@ -1236,9 +1402,12 @@ function frame(nowMs: number): void {
   prev = nowMs; frameNo++;
   advanceTime(dt);
   applyTime();
+  update4(dt);
   if (mode === "system") {
     applySystemTime();
+    sys.set4D(four.M, wMixed(four.ang), four.wk, four.tint);
     sys.update(dt, W, H, cam.auto);
+    placeSysRing();
     renderer.render(sys.scene, sys.camera);
   } else {
     updateCamera(dt);
@@ -1248,6 +1417,7 @@ function frame(nowMs: number): void {
     renderer.render(scene, camera);
   }
   updateHud();
+  drawAxes4();
   if (frameNo % 10 === 0) { updateForecastPanel(); refreshCard(); }
   if (frameNo % 30 === 0) drawCharts();
   requestAnimationFrame(frame);
@@ -1265,6 +1435,7 @@ function frame(nowMs: number): void {
   }
   setText("loading", "지도와 예측 만드는 중…");
   await new Promise((r) => setTimeout(r, 30));
+  buildLightTravel();
   buildLayers();
   buildIndex();
   buildScatter();

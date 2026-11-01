@@ -2,10 +2,30 @@
 // (hi − camHi) + (lo − camLo) 로 '카메라 기준 상대 위치'를 만든다 (RTE). 그래서 수 AU부터 수 Gpc까지 떨림 없이 확대된다.
 
 const RTE = `
-uniform vec3 uCamHi;
-uniform vec3 uCamLo;
-vec3 rte(vec3 hi, vec3 lo) { return (hi - uCamHi) + (lo - uCamLo); }
+// 회전 중심(카메라 목표) 기준 위치: (hi − tgtHi) + (lo − tgtLo)
+uniform vec3 uTgtHi; uniform vec3 uTgtLo;
+uniform vec3 uCamOff;   // 카메라 − 목표 [pc]
+// ---- 4차원: 지도의 모든 점은 (x, y, z, w). w = 빛이 떠난 때 × c (과거 빛원뿔), 단위 pc ----
+uniform mat4 uR4;       // 여섯 평면 회전 (XY XZ XW YZ YW ZW)
+uniform float uWk;      // 시간 축 배율 (1이면 빛의 속도로 45°)
+uniform float uWTgt;    // 회전 중심의 w
+uniform float uP4;      // 4차원 원근 (0 = 정사영)
+uniform float uL;       // 원근 기준 길이
+uniform float uTint;    // w를 색으로
+vec3 rteT(vec3 hi, vec3 lo) { return (hi - uTgtHi) + (lo - uTgtLo); }
 float log10f(float x) { return log(x) * 0.4342944819; }
+// 목표 기준 3차원 위치 p와 w → 4차원 회전 → 투영 → 카메라 기준 위치. wr에 회전 뒤 w를 돌려줌
+vec3 to4(vec3 p, float w, out float wr) {
+  vec4 v = uR4 * vec4(p, (w - uWTgt) * uWk);
+  float k = 1.0 / max(0.2, 1.0 - uP4 * v.w / uL);
+  wr = v.w;
+  return v.xyz * k - uCamOff;
+}
+// w 색: 가까운 과거(최근 빛) = 분홍, 먼 과거(오래된 빛) = 청록. 시야 크기에 대한 로그 비율로
+vec3 wTint(vec3 c, float w) {
+  float t = clamp(0.5 + 0.35 * log10f(max(-w, 1e-9) / uL), 0.0, 1.0);
+  return mix(c, mix(vec3(1.0, 0.44, 0.62), vec3(0.25, 0.82, 0.86), t), uTint * 0.7);
+}
 `;
 
 // ---------- 별 (HYG) : 거리에 따른 겉보기 등급으로 크기·밝기 ----------
@@ -15,8 +35,10 @@ uniform float uMLim; uniform float uFade; uniform float uPx;
 uniform float uDt; uniform float uAge; uniform float uLocal; uniform float uSunMag; uniform vec3 uSunCol;
 varying vec3 vCol; varying float vA;
 void main() {
-  // 직선 운동 (고유 운동 + 시선 속도) : 위치 + 속도 × Δt
-  vec3 rel = rte(aHi, aLo) + aVel * uDt;
+  // 직선 운동 (고유 운동 + 시선 속도): 위치 + 속도 × Δt.  w = −(태양까지 거리): 그 빛이 떠난 때
+  vec3 move = aVel * uDt, sunPos = aHi + aLo + move;
+  float wr;
+  vec3 rel = to4(rteT(aHi, aLo) + move, -length(sunPos), wr);
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = max(length(rel), 1e-7);
@@ -27,7 +49,7 @@ void main() {
   float alive = aSun > 0.5 ? step(M, 40.0) : clamp(1.0 - max(uAge, 0.0) / aLife, 0.0, 1.0) * uLocal;
   vA = clamp(f, 0.0, 1.0) * uFade * alive;
   gl_PointSize = (vA > 0.008 && mv.z < 0.0) ? uPx * clamp(1.0 + 1.3 * log(1.0 + f), 1.0, 10.0) : 0.0;
-  vCol = aSun > 0.5 ? uSunCol : aCol;
+  vCol = wTint(aSun > 0.5 ? uSunCol : aCol, -length(sunPos));
 }`;
 export const STAR_FS = `
 varying vec3 vCol; varying float vA;
@@ -45,7 +67,9 @@ uniform float uRange; uniform float uPx; uniform float uFade; uniform float uSel
 attribute float aIdx;
 varying float vA; varying float vSel;
 void main() {
-  vec3 rel = rte(aHi, aLo) + aVel * uDt;
+  vec3 move = aVel * uDt;
+  float wr;
+  vec3 rel = to4(rteT(aHi, aLo) + move, -length(aHi + aLo + move), wr);
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = length(rel);
@@ -71,19 +95,24 @@ uniform float uMLim; uniform float uScale; uniform vec2 uRes; uniform float uFad
 // 시간: 우주 팽창 배율 uA (= a(t)/a₀), 그룹별 이동 (M31 무리, 마젤란 은하, 은하 중심을 도는 위성), 밀코메다 출현 정도
 uniform float uA; uniform vec3 uM31Off; uniform vec3 uLMCOff; uniform vec3 uGcOff; uniform float uMilk; uniform float uLmcGone;
 attribute float gIdx; attribute float gGroup;
-varying vec2 vUV; varying float vType; varying float vSeed; varying float vA; varying float vPoint; varying float vSel;
+// w: 그 은하의 빛이 떠난 때 × c [pc] (빛이 온 거리, 음수)
+attribute float gW;
+varying vec2 vUV; varying float vType; varying float vSeed; varying float vA; varying float vPoint; varying float vSel; varying vec3 vTint;
 void main() {
   vUV = position.xy; vType = gP.x; vSeed = gP.y; vPoint = 0.0;
   vSel = abs(gIdx - uSelIdx) < 0.5 ? 1.0 : 0.0;
   vec3 c;
   float grpA = 1.0, dim = 0.0;
-  if (gGroup < 0.5) { c = (gHi * uA - uCamHi) + (gLo * uA - uCamLo) + uGcOff; dim = uA > 1.0 ? 10.0 * log10f(uA) : 0.0; }
-  else if (gGroup < 1.5) c = rte(gHi, gLo) + uGcOff;
-  else if (gGroup < 2.5) { c = rte(gHi, gLo) + uM31Off; grpA = 1.0 - uMilk; }
-  else if (gGroup < 3.5) { c = rte(gHi, gLo) + uLMCOff; grpA = 1.0 - uLmcGone; }
-  else if (gGroup < 4.5) c = rte(gHi, gLo) + uGcOff;
-  else { c = rte(gHi, gLo) + uGcOff; grpA = uMilk; }
+  if (gGroup < 0.5) { c = (gHi * uA - uTgtHi) + (gLo * uA - uTgtLo) + uGcOff; dim = uA > 1.0 ? 10.0 * log10f(uA) : 0.0; }
+  else if (gGroup < 1.5) c = rteT(gHi, gLo) + uGcOff;
+  else if (gGroup < 2.5) { c = rteT(gHi, gLo) + uM31Off; grpA = 1.0 - uMilk; }
+  else if (gGroup < 3.5) { c = rteT(gHi, gLo) + uLMCOff; grpA = 1.0 - uLmcGone; }
+  else if (gGroup < 4.5) c = rteT(gHi, gLo) + uGcOff;
+  else { c = rteT(gHi, gLo) + uGcOff; grpA = uMilk; }
   if (grpA < 0.01) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
+  float wr;
+  c = to4(c, gW, wr);
+  vTint = wTint(vec3(1.0), gW);
   vec4 cv = viewMatrix * vec4(c, 1.0);
   float d = -cv.z;
   if (d <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
@@ -114,7 +143,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 export const GAL_FS = `
-varying vec2 vUV; varying float vType; varying float vSeed; varying float vA; varying float vPoint; varying float vSel;
+varying vec2 vUV; varying float vType; varying float vSeed; varying float vA; varying float vPoint; varying float vSel; varying vec3 vTint;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
   float r2 = dot(vUV, vUV);
@@ -122,7 +151,7 @@ void main() {
   if (vPoint > 0.5) {
     float k = 1.0 - sqrt(r2);
     vec3 pc = vType > 2.5 ? vec3(1.0, 0.82, 0.62) : vec3(0.75, 0.82, 1.0);
-    gl_FragColor = vec4(mix(pc, vec3(1.0, 0.85, 0.3), vSel), vA * k * k);
+    gl_FragColor = vec4(mix(pc * vTint, vec3(1.0, 0.85, 0.3), vSel), vA * k * k);
     return;
   }
   float r = sqrt(r2) * 4.0;
@@ -149,23 +178,30 @@ void main() {
     col = vec3(1.0, 0.82, 0.64);
   }
   I *= smoothstep(1.0, 0.8, sqrt(r2));
-  col = mix(col, vec3(1.0, 0.9, 0.4), 0.35 * vSel);
+  col = mix(col * vTint, vec3(1.0, 0.9, 0.4), 0.35 * vSel);
   gl_FragColor = vec4(col, clamp(vA * I, 0.0, 1.0));
 }`;
 
 // ---------- 우리 은하 모형 점 (은하 중심 기준 좌표, 위치는 물체 이동으로) ----------
-export const MW_VS = `
+export const MW_VS = RTE + `
 attribute vec4 aCol; attribute float aSize;
 uniform float uScale; uniform float uFade; uniform float uMinPx;
+uniform vec3 uOrigin;   // 은하 중심의 태양 기준 위치 [pc]
+uniform float uRotZ;    // 나선팔 패턴 회전각
 varying vec4 vC;
 void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  float cs = cos(uRotZ), sn = sin(uRotZ);
+  vec3 local = vec3(cs * position.x - sn * position.y, sn * position.x + cs * position.y, position.z);
+  vec3 sunPos = local + uOrigin;
+  float wr;
+  vec3 rel = to4(sunPos - (uTgtHi + uTgtLo), -length(sunPos), wr);
+  vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = max(1e-6, -mv.z);
   // 카메라 가까이의 점은 크기를 9 px로 묶고 그만큼 흐리게 (화소 계산량을 묶어 둠)
   float want = aSize * uScale / d, sz = clamp(want, uMinPx, 9.0);
   gl_PointSize = (mv.z < 0.0 && uFade > 0.0) ? sz : 0.0;
-  vC = vec4(aCol.rgb, aCol.a * uFade * min(1.0, sz / max(want, 1e-6) * 1.5));
+  vC = vec4(wTint(aCol.rgb, -length(sunPos)), aCol.a * uFade * min(1.0, sz / max(want, 1e-6) * 1.5));
 }`;
 export const MW_FS = `
 varying vec4 vC;
@@ -174,6 +210,19 @@ void main() {
   if (r > 1.0) discard;
   gl_FragColor = vec4(vC.rgb, vC.a * (1.0 - r) * (1.0 - r));
 }`;
+
+// ---------- 관측 가능한 우주의 경계 (선) ----------
+export const SHELL_VS = RTE + `
+uniform float uK;      // 그 시점의 척도 인자 배율
+uniform float uShellW; // 그 경계의 빛이 떠난 때 × c [pc]
+void main() {
+  float wr;
+  vec3 rel = to4(position * uK - (uTgtHi + uTgtLo), uShellW, wr);
+  gl_Position = projectionMatrix * viewMatrix * vec4(rel, 1.0);
+}`;
+export const SHELL_FS = `
+uniform vec3 uColor; uniform float uOpacity;
+void main() { gl_FragColor = vec4(uColor, uOpacity); }`;
 
 // ---------- 행성계: 별과 행성 ----------
 export const BODY_VS = "varying vec3 vN; varying vec3 vW; varying vec3 vP; void main() { vP = position; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }";

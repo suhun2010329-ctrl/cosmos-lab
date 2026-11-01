@@ -27,12 +27,46 @@
         <div id="labels"></div>
         <div id="sysLabels"></div>
         <div class="sel-ring" id="selRing" hidden></div>
-        <div class="hud tl"><div class="big" id="hudScale"></div><div class="sub" id="hudSub"></div></div>
+        <div class="hud tl"><div class="big" id="hudScale"></div><div class="sub" id="hudSub"></div><div class="sub four-hud" id="hud4"></div></div>
+        <canvas class="axes4" id="axes4" width="112" height="112" aria-label="4차원 좌표축: X·Y·Z·W 축이 지금 화면에 놓인 모습"></canvas>
         <div class="hud tr"><div id="hudTarget"></div><div class="sub" id="hudDist"></div></div>
-        <div class="hud br sub">드래그: 회전 · 휠/두 손가락: 확대 · 누르기: 고르기 · 두 번 누르기: 날아가기</div>
+        <div class="hud br sub">드래그: 회전 · Shift+드래그: 4차원 회전 · 휠/두 손가락: 확대 · 누르기: 고르기 · 두 번 누르기: 날아가기</div>
         <div class="loading" id="loading">자료 읽는 중…</div>
         <div class="fade" id="fade"></div>
       </div>
+
+      <section class="four4" id="four4" aria-label="4차원 조작">
+        <div class="frow">
+          <span class="ftitle">4차원</span>
+          <span class="fdef" id="four4Def">지도의 모든 점은 (x, y, z, <b>w</b>)입니다. <b>w</b> = 그 천체에서 지금 보이는 빛이 떠난 때 × 빛의 속도</span>
+        </div>
+        <div class="frow">
+          <div class="group">
+            <span class="lbl">시점</span>
+            <button class="chip" type="button" data-r4="3d" aria-pressed="true">3차원 단면</button>
+            <button class="chip" type="button" data-r4="cone" aria-pressed="false">과거 광원뿔</button>
+            <button class="chip" type="button" data-r4="tilt" aria-pressed="false">시공간 45°</button>
+            <button class="chip" type="button" data-r4="side" aria-pressed="false">옆에서 본 4차원</button>
+            <button class="chip" type="button" id="r4Spin" aria-pressed="false">4차원 회전 재생</button>
+          </div>
+        </div>
+        <div class="frow sliders">
+          <label class="r4"><span>XW</span><input type="range" id="r4XW" min="-180" max="180" step="1" value="0" aria-label="XW 평면 회전 (도)"><output id="r4XWV">0°</output></label>
+          <label class="r4"><span>YW</span><input type="range" id="r4YW" min="-180" max="180" step="1" value="0" aria-label="YW 평면 회전 (도)"><output id="r4YWV">0°</output></label>
+          <label class="r4"><span>ZW</span><input type="range" id="r4ZW" min="-180" max="180" step="1" value="0" aria-label="ZW 평면 회전 (도)"><output id="r4ZWV">0°</output></label>
+        </div>
+        <div class="frow">
+          <div class="group" id="r4Wk">
+            <span class="lbl">w 축척</span>
+            <button class="chip" type="button" data-wk="0.25" aria-pressed="false">¼</button>
+            <button class="chip" type="button" data-wk="1" aria-pressed="true">1 (빛 = 45°)</button>
+            <button class="chip" type="button" data-wk="4" aria-pressed="false">4</button>
+          </div>
+          <label class="chk"><input type="checkbox" id="r4Tint"> w를 색으로 <span class="swatch">(<b style="color:#ff709e">최근의 빛</b> → <b style="color:#40d1db">오래된 빛</b>)</span></label>
+          <label class="chk"><input type="checkbox" id="r4Persp"> w 원근 (최근의 빛을 크게)</label>
+        </div>
+        <p class="note" id="four4Note">w 축이 화면에 수직이라 보이지 않습니다. 보통의 3차원 지도와 같습니다.</p>
+      </section>
 
       <section class="timebar" aria-label="시간 조작">
         <div class="trow">
@@ -186,6 +220,10 @@
       <p>시간 막대의 왼쪽 끝은 빅뱅입니다. 과거로 가면 은하 사이 거리가 척도 인자 a(t)만큼 줄고, 하늘은 그때의 우주배경복사 온도로 빛납니다. 38만 년 전(3,000 K)보다 앞은 빛이 갇힌 플라스마라서 아무것도 보이지 않습니다. 미래로 가면 고른 시나리오에 따라 은하들이 멀어지거나(팽창) 다시 모입니다(크런치).</p>
     </div>
     <div>
+      <h3>4차원을 지도에 넣은 방식</h3>
+      <p>지도의 모든 점에 네 번째 좌표 <b>w</b>를 줍니다. w는 그 천체에서 지금 우리 눈에 닿은 빛이 출발한 때 × 빛의 속도로, 우리가 보는 우주가 ‘과거 광원뿔’ 위에 있다는 사실을 좌표로 쓴 것입니다(1 Mpc보다 먼 은하는 공동 거리가 아니라 빛이 실제로 온 거리 c·t를 씁니다). 4차원 관측실과 같은 여섯 평면 회전으로 XW·YW·ZW 평면을 돌리면 w 축이 화면에 섞여 들어옵니다. ZW를 −90°로 돌리면 세로축이 시간이 되어 관측 가능한 우주가 원뿔로 보입니다. 행성계 장면에서는 w가 시간이라서, 행성들이 태양의 곧은 세계선을 감는 나선(세계선)으로 그려집니다. 시간 막대·예측·고르기·이름표는 4차원 회전 중에도 그대로 작동합니다.</p>
+    </div>
+    <div>
       <h3>무엇이 실제이고 무엇이 모형인가</h3>
       <p>별의 위치·밝기·색·속도, 외계행성의 궤도, 은하의 위치·크기·기울기, 행성·위성의 물리량은 관측값입니다. 우리 은하의 나선팔, 국부 은하군 궤도의 질량 분포, 은하 판의 무늬, 외계행성계의 궤도 방향은 모형이나 보기 위한 그림입니다.</p>
     </div>
@@ -203,6 +241,7 @@
       <li>Bailer-Jones 외 (2018), A&amp;A 616, A37 (별의 근접 통과) · Joyce 외 (2020), ApJ 902, 63 (베텔게우스).</li>
       <li>Kopparapu 외 (2013), ApJ 765, 131 · Chen & Kipping (2017), ApJ 834, 17 · Fulton 외 (2017), AJ 154, 109.</li>
       <li>Adams & Laughlin (1997), Rev. Mod. Phys. 69, 337 · Loeb (2002), PRD 65, 047301 · Hawking (1975).</li>
+      <li>Minkowski (1908), „Raum und Zeit“ (시공간 4차원과 광원뿔) · Hogg (1999), arXiv:astro-ph/9905116 (공동 거리와 빛이 온 거리).</li>
       <li>Luu, Qiu & Tye (2025), JCAP · Caldwell, Kamionkowski & Weinberg (2003), PRL 91, 071301 · DESI (2025) · Planck Collaboration (2020), A&amp;A 641, A6.</li>
       <li>NASA 행성 자료표 (Williams, NSSDCA) · Event Horizon Telescope (2019, 2022) · El-Badry 외 (2023), MNRAS 518, 1057 · Gaia Collaboration (2024).</li>
     </ol>

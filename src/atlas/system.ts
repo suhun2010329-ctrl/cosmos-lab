@@ -98,7 +98,9 @@ export function exoSystem(s: PlanetSystem): SysData {
   return { name: s.name, real: false, star: { T, R, L, M, spect: s.star.spect ?? "" }, planets, hz: habitableZone(L, T) };
 }
 
-interface Live { mesh: THREE.Mesh; p: SysPlanet; base: SysPlanet; orbit: THREE.Line; label: HTMLDivElement; gone: boolean; moons: { mesh: THREE.Mesh; dist: number; P: number; phase: number; label: HTMLDivElement; name: string }[] }
+interface Live { mesh: THREE.Mesh; p: SysPlanet; base: SysPlanet; orbit: THREE.Line; orbOp: number; raw: THREE.Vector3; label: HTMLDivElement; gone: boolean; moons: { mesh: THREE.Mesh; dist: number; P: number; phase: number; label: HTMLDivElement; name: string }[] }
+interface WorldLine { line: THREE.Line; pos: Float32Array; col: Float32Array; l: Live | null }
+const WL_MAX = 1537;
 export interface SysTime { secular?: { e: number[]; peri: number[]; i: number[]; node: number[] }; sun?: SunState; moonScale?: number; earthGone?: boolean; starDead?: boolean }
 
 export class SystemView {
@@ -119,8 +121,22 @@ export class SystemView {
   private orbitKey = "";
   /** 지금 화면의 별 상태 (카드 표시용) */
   starNow = { R: 1, L: 1, T: 5772, phase: "" };
+  /**
+   * 4차원: 지도와 같은 회전 행렬 M (행 우선, 지도 좌표 x·y = 황도면, z = 황도 북극). w = 시간 × k.
+   * 지금(w = 0)의 궤도·띠·위성 궤도는 root 묶음에 넣어 M의 공간 부분으로 한꺼번에 변환하고,
+   * 행성·위성은 위치만 변환해 공 모양을 유지한다. 지나온 길은 세계선(나선)으로 그린다.
+   */
+  private four = { M: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] as readonly number[], active: false, wk: 1, tint: false };
+  private root = new THREE.Group();
+  private wls: WorldLine[] = [];
+  /** 지금 그리는 세계선의 길이 [년] (0이면 안 그림) */
+  wlYears = 0;
+  private raw = new THREE.Vector3();
+  private ax = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
 
   constructor(private labels: HTMLElement) {
+    this.root.matrixAutoUpdate = false;
+    this.scene.add(this.root);
     const c = document.createElement("canvas");
     c.width = c.height = 128;
     const x = c.getContext("2d")!, g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -130,11 +146,10 @@ export class SystemView {
   }
 
   clear(): void {
-    const s = this.scene;
-    while (s.children.length) {
-      const o = s.children.pop() as THREE.Mesh;
-      o.traverse?.((ch) => { const m = ch as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose?.(); });
-    }
+    const dispose = (o: THREE.Object3D) => o.traverse((ch) => { const m = ch as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose?.(); });
+    for (const o of [...this.root.children]) { this.root.remove(o); dispose(o); }
+    for (const o of [...this.scene.children]) if (o !== this.root) { this.scene.remove(o); dispose(o); }
+    this.wls = [];
     for (const l of this.live) { l.label.remove(); l.moons.forEach((m) => m.label.remove()); }
     this.live = [];
     this.data = null;
@@ -142,10 +157,33 @@ export class SystemView {
     if (this.probe) { this.probe.label.remove(); this.probe = null; }
   }
 
+  set4D(M: readonly number[], active: boolean, wk: number, tint: boolean): void {
+    this.four.M = M; this.four.active = active; this.four.wk = wk; this.four.tint = tint;
+  }
+
+  /** three 좌표(y = 황도 북극)의 4차원 점 (x, y, z, w) → 회전 후 화면 좌표 (three) */
+  private fwd(x: number, y: number, z: number, w: number, out: THREE.Vector3): THREE.Vector3 {
+    const M = this.four.M, mx = x, my = -z, mz = y;
+    const r0 = M[0] * mx + M[1] * my + M[2] * mz + M[3] * w;
+    const r1 = M[4] * mx + M[5] * my + M[6] * mz + M[7] * w;
+    const r2 = M[8] * mx + M[9] * my + M[10] * mz + M[11] * w;
+    return out.set(r0, r2, -r1);
+  }
+
+  private addWorldLine(l: Live | null): void {
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(3 * WL_MAX), col = new Float32Array(3 * WL_MAX);
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
+    const line = new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    line.frustumCulled = false; line.visible = false;
+    this.scene.add(line);
+    this.wls.push({ line, pos, col, l });
+  }
+
   show(d: SysData): void {
     this.clear();
     this.data = d;
-    const s = this.scene, aMin = Math.min(...d.planets.map((p) => p.a * (1 - p.e)), 1);
+    const s = this.scene, s4 = this.root, aMin = Math.min(...d.planets.map((p) => p.a * (1 - p.e)), 1);
     const sc = blackbody(d.star.T).map((v) => v / 255) as [number, number, number];
     // 화면 크기는 보기 쉽게 키우되, 가장 안쪽 궤도보다 커지지 않게 제한
     const Rs = Math.min(0.05 * Math.sqrt(d.star.R), 0.35 * aMin);
@@ -155,7 +193,7 @@ export class SystemView {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glow, color: new THREE.Color(...sc), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     glow.scale.setScalar(Rs * 9); s.add(glow);
     const hz = new THREE.Mesh(new THREE.RingGeometry(d.hz[0], d.hz[1], 180, 1), new THREE.MeshBasicMaterial({ color: 0x1baf7a, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false }));
-    hz.rotation.x = -Math.PI / 2; s.add(hz);
+    hz.rotation.x = -Math.PI / 2; s4.add(hz);
     this.star = star; this.starGlow = glow; this.hz = hz; this.Rs0 = Rs; this.orbitKey = "";
     this.starNow = { R: d.star.R, L: d.star.L, T: d.star.T, phase: "" };
     // 배경 별
@@ -173,8 +211,9 @@ export class SystemView {
         orb.push(eclipticToThree(p, nu, p.a * (1 - p.e * Math.cos(E)), new THREE.Vector3()));
       }
       const dwarf = p.type === "왜소행성";
-      const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(orb), new THREE.LineBasicMaterial({ color: dwarf ? 0x6f6a82 : 0x8a86a0, transparent: true, opacity: dwarf ? 0.22 : 0.4 }));
-      s.add(orbit);
+      const orbOp = dwarf ? 0.22 : 0.4;
+      const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(orb), new THREE.LineBasicMaterial({ color: dwarf ? 0x6f6a82 : 0x8a86a0, transparent: true, opacity: orbOp }));
+      s4.add(orbit);
       const gap = Math.min(p.a - (sorted[k - 1]?.a ?? 0), (sorted[k + 1]?.a ?? p.a * 2) - p.a);
       const rd = Math.max(Math.min(0.02 * Math.sqrt(p.R), 0.3 * gap, 0.25 * p.a), 0.002);
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(rd, 32, 16), new THREE.ShaderMaterial({
@@ -197,8 +236,11 @@ export class SystemView {
         s.add(mm);
         return { mesh: mm, dist, P, phase: hash01(name) * 2 * Math.PI, label: this.makeLabel(name, "moon"), name };
       }) : [];
-      this.live.push({ mesh, p: { ...p }, base: p, orbit, label, gone: false, moons });
+      this.live.push({ mesh, p: { ...p }, base: p, orbit, orbOp, raw: new THREE.Vector3(), label, gone: false, moons });
     });
+    // 세계선: 태양(곧은 선)과 행성(나선)
+    this.addWorldLine(null);
+    for (const l of this.live) this.addWorldLine(l);
     const aMax = Math.max(...d.planets.map((p) => p.a * (1 + p.e)), d.hz[1], 0.2);
     this.r = d.real ? 4.5 : Math.min(Math.max(aMax * 2.6, 0.08), 200);
     this.rMin = Rs * 2.5; this.rMax = Math.max(400, aMax * 10);
@@ -218,7 +260,7 @@ export class SystemView {
         p[3 * k] = tmp.x; p[3 * k + 1] = tmp.y; p[3 * k + 2] = tmp.z;
       }
       g.setAttribute("position", new THREE.BufferAttribute(p, 3));
-      this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color, size: 1.3, sizeAttenuation: false, transparent: true, opacity: op, depthWrite: false })));
+      this.root.add(new THREE.Points(g, new THREE.PointsMaterial({ color, size: 1.3, sizeAttenuation: false, transparent: true, opacity: op, depthWrite: false })));
     };
     make(4000, 2.1, 3.3, 18, 0xb8a990, 0.45);
     make(5000, 30, 50, 25, 0x8fa6c2, 0.35);
@@ -304,18 +346,18 @@ export class SystemView {
     const jr = rd * (1.25 + 1.4 * Math.log10((Re + jwstKm) / Re) * 1.6);
     const jdot = new THREE.Mesh(new THREE.SphereGeometry(rd * 0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd27f }));
     group.add(jdot);
-    this.scene.add(group);
+    this.root.add(group);
     this.sat = { group, items, jwst: { dot: jdot, r: jr, label: this.makeLabel("제임스 웹 (L2)", "sat") } };
   }
 
   /** 탐사선: 전이 궤도 선과 지금 위치 (pos가 null이면 숨김) */
   setTransfer(path: THREE.Vector3[] | null, name = ""): void {
-    if (this.probe) { this.scene.remove(this.probe.line); this.scene.remove(this.probe.dot); this.probe.label.remove(); this.probe = null; }
+    if (this.probe) { this.root.remove(this.probe.line); this.root.remove(this.probe.dot); this.probe.label.remove(); this.probe = null; }
     if (!path) return;
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(path), new THREE.LineDashedMaterial({ color: 0xffb347, dashSize: 0.05, gapSize: 0.03, transparent: true, opacity: 0.9 }));
     line.computeLineDistances();
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd27f }));
-    this.scene.add(line); this.scene.add(dot);
+    this.root.add(line); this.root.add(dot);
     this.probe = { line, dot, label: this.makeLabel(name, "probe") };
   }
   private probePos: THREE.Vector3 | null = null;
@@ -340,6 +382,12 @@ export class SystemView {
     this.camera.aspect = W / Math.max(1, H);
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
+    // 4차원 회전의 공간 부분 (w = 0인 ‘지금’ 단면을 화면으로 보내는 3×3)
+    const [c0, c1, c2] = this.ax;
+    this.fwd(1, 0, 0, 0, c0); this.fwd(0, 1, 0, 0, c1); this.fwd(0, 0, 1, 0, c2);
+    this.root.matrix.set(c0.x, c1.x, c2.x, 0, c0.y, c1.y, c2.y, 0, c0.z, c1.z, c2.z, 0, 0, 0, 0, 1);
+    this.root.updateMatrixWorld(true);
+    const R4 = this.root.matrix, act = this.four.active;
     const place = (el: HTMLDivElement, pos: THREE.Vector3, minSep = 0, ref?: THREE.Vector3) => {
       this.v.copy(pos).project(this.camera);
       let vis = this.v.z < 1 && Math.abs(this.v.x) < 1.05 && Math.abs(this.v.y) < 1.05;
@@ -349,41 +397,76 @@ export class SystemView {
       if (vis) { el.style.left = sx + "px"; el.style.top = sy + "px"; }
     };
     for (const l of this.live) {
-      orbitPos(l.p, this.days, l.mesh.position);
+      orbitPos(l.p, this.days, l.raw);
+      l.mesh.position.copy(l.raw).applyMatrix4(R4);
+      (l.orbit.material as THREE.LineBasicMaterial).opacity = l.orbOp * (act ? 0.35 : 1);
       l.mesh.rotation.y += dt * 0.5;
       (l.mesh.material as THREE.ShaderMaterial).uniforms.uStar.value.set(0, 0, 0);
       if (l.gone) { l.label.style.display = "none"; l.moons.forEach((m) => (m.label.style.display = "none")); continue; }
       place(l.label, l.mesh.position);
       for (const m of l.moons) {
         const ang = m.phase + 2 * Math.PI * this.days / m.P, md = m.dist * (m.name === "달" ? this.moonScale : 1);
-        m.mesh.position.set(l.mesh.position.x + md * Math.cos(ang), l.mesh.position.y, l.mesh.position.z - md * Math.sin(ang));
+        m.mesh.position.set(l.raw.x + md * Math.cos(ang), l.raw.y, l.raw.z - md * Math.sin(ang)).applyMatrix4(R4);
         place(m.label, m.mesh.position, 26, l.mesh.position);
       }
     }
     const earth = this.live.find((l) => l.p.name === "지구");
     if (this.sat && earth) {
-      const g = this.sat.group, ep = earth.mesh.position;
+      const g = this.sat.group, ep = earth.mesh.position, er = earth.raw;
       g.visible = !earth.gone;
-      g.position.copy(ep);
+      g.position.copy(er);
       for (const it of this.sat.items) {
         const ang = 2 * Math.PI * ((this.days / it.P) % 1);
         it.dot.position.set(it.r * Math.cos(ang), 0, it.r * Math.sin(ang)).applyAxisAngle(new THREE.Vector3(1, 0, 0), it.tilt);
         if (earth.gone) { it.label.style.display = "none"; continue; }
-        place(it.label, it.dot.position.clone().add(ep), 30, ep);
+        place(it.label, it.dot.position.clone().add(er).applyMatrix4(R4), 30, ep);
       }
       const j = this.sat.jwst;
       if (j) {
         // L2: 태양 반대쪽
-        const dir = ep.clone().normalize();
+        const dir = er.clone().normalize();
         j.dot.position.copy(dir.multiplyScalar(j.r));
-        if (earth.gone) j.label.style.display = "none"; else place(j.label, j.dot.position.clone().add(ep), 30, ep);
+        if (earth.gone) j.label.style.display = "none"; else place(j.label, j.dot.position.clone().add(er).applyMatrix4(R4), 30, ep);
       }
     }
     if (this.probe) {
       const vis = !!this.probePos;
       this.probe.dot.visible = vis;
-      if (vis) { this.probe.dot.position.copy(this.probePos!); place(this.probe.label, this.probePos!); }
+      if (vis) { this.probe.dot.position.copy(this.probePos!); place(this.probe.label, this.probePos!.clone().applyMatrix4(R4)); }
       else this.probe.label.style.display = "none";
+    }
+    this.updateWorldLines();
+  }
+
+  /**
+   * 세계선: 지난 T년 동안의 (x, y, z, w = −k·지난 시간). 길이는 화면의 0.6배가 되게 k를 정하고,
+   * T는 시야 크기에 맞춘 공전 주기 (케플러 3법칙: T ∝ r^1.5). 너무 촘촘해지는 안쪽 행성은 생략.
+   */
+  private updateWorldLines(): void {
+    const act = this.four.active;
+    const T = act ? Math.min(Math.max(6 * Math.pow(this.r / 4.5, 1.5), 0.3), 3000) : 0;
+    this.wlYears = T;
+    const k = act ? 0.6 * this.r / T * this.four.wk : 0, v = this.raw;
+    for (const wl of this.wls) {
+      const l = wl.l;
+      if (!act || (l && (l.gone || T / (l.p.P / 365.25) > 30))) { wl.line.visible = false; continue; }
+      const n = l ? Math.min(Math.max(Math.ceil(T / (l.p.P / 365.25) * 64) + 2, 48), WL_MAX) : 2;
+      const base = l ? l.p.col : [1, 0.85, 0.45];
+      for (let i = 0; i < n; i++) {
+        const f = i / (n - 1), ago = T * (1 - f);
+        if (l) orbitPos(l.p, this.days - ago * 365.25, v); else v.set(0, 0, 0);
+        this.fwd(v.x, v.y, v.z, -k * ago, v);
+        wl.pos[3 * i] = v.x; wl.pos[3 * i + 1] = v.y; wl.pos[3 * i + 2] = v.z;
+        const b = 0.1 + 0.9 * f * f;
+        // w를 색으로: 지금(분홍) → 과거(청록). 아니면 행성 색이 과거로 갈수록 흐려짐
+        const c = this.four.tint ? [0.25 + 0.75 * f, 0.82 - 0.38 * f, 0.86 - 0.24 * f] : base;
+        wl.col[3 * i] = c[0] * b; wl.col[3 * i + 1] = c[1] * b; wl.col[3 * i + 2] = c[2] * b;
+      }
+      const g = wl.line.geometry;
+      g.setDrawRange(0, n);
+      (g.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      (g.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+      wl.line.visible = true;
     }
   }
 }
