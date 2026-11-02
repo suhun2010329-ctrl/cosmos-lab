@@ -65,7 +65,13 @@ async function exoplanets() {
   const q = (s) => "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?format=json&query=" + encodeURIComponent(s);
   const cnt = await get("NASA 외계행성 수", q("select count(*) as n from pscomppars"));
   const since = new Date(now.getTime() - 120 * 864e5);
-  const recent = await get("NASA 최근 등록 외계행성", q("select top 300 pl_name,hostname,ra,dec,sy_dist,pl_orbper,pl_orbsmax,pl_orbeccen,pl_rade,pl_bmassj,pl_radj,pl_eqt,disc_year,discoverymethod,st_teff,st_rad,st_mass,st_met,st_spectype,sy_vmag,releasedate from pscomppars where releasedate >= '" + iso(since) + "' order by releasedate desc"));
+  const cols = "pl_name,hostname,ra,dec,sy_dist,pl_orbper,pl_orbsmax,pl_orbeccen,pl_rade,pl_bmassj,pl_radj,pl_eqt,disc_year,discoverymethod,st_teff,st_rad,st_mass,st_met,st_spectype,sy_vmag,releasedate";
+  // 1) 기본 행성 표(ps, default_flag = 1)에서 최근 120일 등록 2) 날짜 비교가 안 되면 올해·작년 발견분에서 날짜로 거름
+  let recent = await get("NASA 최근 등록 외계행성", q("select top 400 " + cols + " from ps where default_flag = 1 and releasedate >= '" + iso(since) + "' order by releasedate desc"));
+  if (!Array.isArray(recent)) {
+    const r2 = await get("NASA 최근 발견 외계행성 (대체 질의)", q("select " + cols + " from ps where default_flag = 1 and disc_year >= " + (now.getUTCFullYear() - 1)));
+    if (Array.isArray(r2)) recent = r2.filter((r) => String(r.releasedate ?? "") >= iso(since)).sort((x, y) => String(y.releasedate).localeCompare(String(x.releasedate))).slice(0, 400);
+  }
   const out = {};
   if (Array.isArray(cnt) && cnt[0]) out.count = +cnt[0].n;
   if (Array.isArray(recent)) out.recent = recent.filter((r) => r.ra != null && r.dec != null && r.sy_dist != null);
@@ -152,3 +158,11 @@ writeFileSync(OUT, JSON.stringify(live));
 const ok = sources.filter((s) => s.ok).length;
 console.log("live.json: " + ok + "/" + sources.length + " 원천 성공 → " + OUT);
 for (const s of sources) if (!s.ok) console.log("  실패: " + s.name + " — " + s.error);
+// 받은 자료 요약 (Actions 기록에서 확인용)
+const m = sol.monthly ?? [];
+console.log("  태양: 월별 " + m.length + "개, 마지막 " + JSON.stringify(m[m.length - 1]) + ", Kp " + JSON.stringify(sol.kp) + ", 플레어 " + (sol.flares?.length ?? 0) + "개, 예측 " + (sol.predicted?.length ?? 0) + "개");
+console.log("  소행성: 근접 " + (ne.approaches?.length ?? 0) + "개 " + JSON.stringify((ne.approaches ?? [])[0] ?? null) + ", 위험 " + (ne.risks?.length ?? 0) + "개 " + JSON.stringify((ne.risks ?? [])[0] ?? null));
+console.log("  외계행성: " + ex.count + "개, 최근 " + (ex.recent?.length ?? 0) + "개 " + JSON.stringify((ex.recent ?? [])[0] ?? null));
+console.log("  위성: " + sat.map((x) => x.name + " n=" + x.n + " i=" + x.i + " epoch=" + x.epoch).join(" | "));
+console.log("  Horizons: jd " + hz.jd + " " + Object.entries(hz.pos).map(([k, v]) => k + "=" + v.map((x) => x.toFixed(4)).join(",")).join(" "));
+console.log("  논문: 확인 " + pap.checked.length + "편, 반영 " + pap.accepted.map((x) => x.value + "±" + x.sigma + " " + x.arxiv + " " + x.journal).join("; ") + " | 보류 " + pap.pending.map((x) => x.value + "±" + x.sigma + " " + x.arxiv + " [" + x.reasons.join("/") + "]").join("; "));
