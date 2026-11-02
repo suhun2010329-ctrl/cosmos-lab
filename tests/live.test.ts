@@ -73,6 +73,7 @@ describe("논문 자동 수집기의 규칙", () => {
   it("범위 밖·게재 미확인·크게 어긋난 값은 보류, 나머지는 반영", () => {
     const ref = { mean: 68.4, sigma: 0.4, n: 4 }, [a, b] = parseAtom(atom);
     expect(verify("H0", 72.6, 1.4, ref, { journal: a.journal }, a).status).toBe("accepted");
+    expect(verify("H0", 72.6, 1.4, ref, { journal: "Astronomy &amp; Astrophysics" }, a).journal).toBe("Astronomy & Astrophysics");
     const bad = verify("H0", 95, 1, ref, null, b);
     expect(bad.status).toBe("pending");
     expect(bad.reasons.join(" ")).toMatch(/범위/);

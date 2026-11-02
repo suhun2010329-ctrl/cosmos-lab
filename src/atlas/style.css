@@ -166,3 +166,4 @@ table.pl td.num { font-family: var(--f-mono); text-align: right; }
 .live .srcs { font-size: 12px; columns: 2; column-gap: 12px; margin: 6px 0; padding: 0; list-style: none; }
 .live .srcs li { break-inside: avoid; }
 .live .srcs .bad { color: #d55181; }
+@media (max-width: 560px) { .hud.tr { top: 64px; max-width: 60%; } .hud .big { font-size: 17px; } }

@@ -26,5 +26,5 @@ export function verify(key, value, sigma, ref, pub, e) {
   const dev = ref.n ? Math.abs(value - ref.mean) / Math.sqrt(sigma ** 2 + ref.sigma ** 2) : 0;
   if (ref.n && dev > 6) reasons.push("기존 측정들과 " + dev.toFixed(1) + "σ 차이: 사람 검토 필요");
   if (!pub) reasons.push("학술지 게재 확인 전 (arXiv 프리프린트)");
-  return { param: key, label: P.label, value, sigma, unit: P.unit, title: e.title, arxiv: e.id, date: (e.published || "").slice(0, 10), journal: pub?.journal ?? null, doi: pub?.doi ?? null, dev: ref.n ? +dev.toFixed(2) : null, method: "자동 추출 (초록의 수식)", status: reasons.length ? "pending" : "accepted", reasons };
+  return { param: key, label: P.label, value, sigma, unit: P.unit, title: e.title, arxiv: e.id, date: (e.published || "").slice(0, 10), journal: pub?.journal ? strip(pub.journal) : null, doi: pub?.doi ?? null, dev: ref.n ? +dev.toFixed(2) : null, method: "자동 추출 (초록의 수식)", status: reasons.length ? "pending" : "accepted", reasons };
 }
