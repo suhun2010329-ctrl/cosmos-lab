@@ -9,8 +9,10 @@ import { GLOBULARS, LARGE_SCALE, LOCAL_GROUP, NEBULAE, SATELLITES, SUN_POS_NOTE,
 import { bvToTemp, galLB, hubbleName, hubbleType, loadAtlasData, planetA, planetRadiusEarth, radecToGal, starColor, type AtlasData, type Galaxy } from "./data";
 import { buildMilkyWay, GC_POS } from "./milkyway";
 import { GAL_FS, GAL_VS, HOST_FS, HOST_VS, MW_FS, MW_VS, SHELL_FS, SHELL_VS, STAR_FS, STAR_VS } from "./shaders";
-import { lightTravelTable, matrix4, PRESETS4, project4, wMixed, XW, YW, ZW } from "./four";
-import { exoSystem, solarSystem, SystemView, type SysData } from "./system";
+import { buildLightCone, coneAt, matrix4, PRESETS4, project4, wMixed, XW, YW, ZW, type LightCone } from "./four";
+import { exoSystem, orbitPos, solarSystem, SystemView, type SysData } from "./system";
+import { ageForH0, diameterFromH, fitSolarCycle, impactEffects, kpStorm, loadLive, refreshDirect, satNow, summarizeH0, type ExoRow, type Literature, type Live } from "./live";
+import type { TimedEvent } from "./sun";
 import { aliveProbability, bolometricCorrection, LUM_NAMES, starPhys, STRIDE, type StarPhys } from "./stellar";
 import { dayLength, earthAt, moonDistance, sunAt, totalEclipsePossible } from "./sun";
 import { BLACK_HOLES, FACTS, hawkingYears, schwarzschildKm } from "./bodies";
@@ -19,6 +21,10 @@ import { SECULAR_LIMIT_YEARS } from "./secular";
 import { dtToSlider, fmtDt, fmtYearsShort, NOW_YEAR, sliderToDt, Timeline, YEAR_S } from "./time";
 import { buildEvents, buildForecasts, type Forecasts } from "./predict";
 import { drawEccentricity, drawEncounters, drawLocalGroup, drawSun } from "./charts";
+import { BODY_COMP, bulkComposition, ELEMENTS, exoComposition, layerMasses, starComposition, type Composition } from "./composition";
+import { ImpactView, MODE_NAMES, type ColorMode } from "./impactview";
+import { customScene, PICKABLE, SCENES, stillBody, type Scene } from "./impactscenes";
+import type { ImpactSetup } from "./impact";
 import { JWST_KM, planTransfer, probePosition, SATELLITES_EARTH, transferPath, VEHICLES, type Transfer } from "./mission";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -85,19 +91,59 @@ function split(arr: ArrayLike<number>, n: number): { hi: Float32Array; lo: Float
 const camU = {
   uTgtHi: { value: new THREE.Vector3() }, uTgtLo: { value: new THREE.Vector3() }, uCamOff: { value: new THREE.Vector3() },
   uR4: { value: new THREE.Matrix4() }, uWk: { value: 1 }, uWTgt: { value: 0 }, uP4: { value: 0 }, uL: { value: 1 }, uTint: { value: 0 },
+  uSeeT: { value: 1 }, uMix: { value: 0 }, uTgtShift: { value: new THREE.Vector3() },
 };
 
 // ---------- 4차원: (x, y, z, w), w = 빛이 떠난 때 × c ----------
 // 4차원 관측실의 여섯 평면 회전(rotate4)을 그대로 지도에 씀. 회전각이 모두 0이면 보통의 3차원 지도와 같다.
 const four = {
   ang: [0, 0, 0, 0, 0, 0], spin: false, tint: false, persp: false, wk: 1, M: matrix4([0, 0, 0, 0, 0, 0]),
-  tween: null as null | { t: number; from: number[]; to: number[] },
+  tween: null as null | { t: number; from: number[]; to: number[]; phi0?: number; phi1?: number },
 };
 const SPIN_SPEEDS = [0, 0, 0.21, 0, 0.13, 0.17];
 const DEG4 = Math.PI / 180;
-let lightTravelPc: (d: number) => number = (d) => d;
-function buildLightTravel(): void {
-  lightTravelPc = lightTravelTable((z) => core.comovingDistance(z), (z) => (TL.t0 - core.tOf(-Math.log10(1 + z))) / YEAR_S);
+
+// ---------- 시공간 조건: 팽창 · 공간 = 시간 ----------
+// 팽창: 은하 사이 거리가 척도 인자 a(t)만큼 늘어나고, 빛도 늘어나는 공간을 건너 온다.
+// 공간 = 시간: 멀리 있는 것일수록 빛이 떠난 옛 모습만 보인다. w = 그 빛이 떠난 때 × c (관측 시점의 과거 광원뿔).
+// 공간을 w 쪽으로 돌릴수록(uMix) ‘같은 순간의 위치’에서 ‘빛이 떠날 때의 위치’로 옮겨 가 광원뿔(눈물방울)이 드러난다.
+const space4 = { expand: true, seeT: true };
+/** 이보다 먼(오늘 기준 거리) 천체는 우주 팽창을 따름 */
+const HUB_PC = 2.5e6;
+const T0_Y = TL.t0 / YEAR_S;
+let cone: LightCone = buildLightCone((d) => TL.la(d), T0_Y, 0, true);
+let coneKey = "";
+/** 태양 기준 위치 p(그 시점)의 4차원 좌표 w, 위치 배율, 보이는가 */
+function seen(p: ArrayLike<number>): { w: number; S: number; ok: boolean; ratio: number } {
+  const d = Math.hypot(p[0], p[1], p[2]);
+  if (!space4.seeT) return { w: 0, S: 1, ok: true, ratio: 1 };
+  const chi = d / now.s;
+  if (chi < HUB_PC) return { w: -d, S: 1, ok: true, ratio: 1 };
+  const r = coneAt(cone, Math.min(chi, cone.horizon * 0.99999));
+  return { w: r.w, S: 1 + (r.ratio - 1) * camU.uMix.value, ok: chi <= cone.horizon * 1.0001, ratio: r.ratio };
+}
+/** 관측 시각이나 조건이 바뀌면 광원뿔을 다시 만들고 은하·경계의 w를 갱신 */
+function refreshCone(): void {
+  const key = (T0_Y + time.dt).toPrecision(5) + "|" + space4.expand + space4.seeT + TL.fate;
+  if (key === coneKey || !galW) return;
+  coneKey = key;
+  cone = buildLightCone((d) => TL.la(d), T0_Y, time.dt, space4.expand);
+  const st = space4.seeT, GW = galW.array as Float32Array, GS = galS!.array as Float32Array;
+  gals.forEach((e, i) => {
+    const chi = Math.hypot(e.pos[0], e.pos[1], e.pos[2]);
+    if (e.group !== 0) { GW[i] = st ? -chi : 0; GS[i] = 1; return; }
+    const r = coneAt(cone, chi);
+    GW[i] = st ? r.w : 0;
+    GS[i] = !st ? 1 : r.ok ? r.ratio : -1;
+  });
+  galW.needsUpdate = true; galS!.needsUpdate = true;
+  for (const sh of shells) {
+    const u = (sh.g.material as THREE.ShaderMaterial).uniforms, r = coneAt(cone, Math.min(sh.R, cone.horizon * 0.99999));
+    u.uShellW.value = st ? r.w : 0; u.uShellS.value = st ? r.ratio : 1;
+    sh.ok = !st || sh.R <= cone.horizon * 1.0001;
+  }
+  const hz = cone.horizon * now.s / LY_PC;
+  setText("c4Info", (st ? "보이는 우주의 끝(입자 지평선) " + fmtYearsShort(hz).replace("년", "광년") + " · 가장 오래된 빛 " + fmtYearsShort(cone.age) + " 전 출발" : "모든 천체가 같은 순간(w = 0)에 놓인 3차원 단면") + (space4.expand ? "" : " · 팽창 없음: 거리가 그대로"));
 }
 function update4(dt: number): void {
   if (four.tween) {
@@ -105,6 +151,8 @@ function update4(dt: number): void {
     tw.t = Math.min(1, tw.t + dt / 1.1);
     const e = tw.t * tw.t * (3 - 2 * tw.t);
     for (let k = 0; k < 6; k++) four.ang[k] = tw.from[k] + (tw.to[k] - tw.from[k]) * e;
+    // 광원뿔은 옆에서 봐야 모양이 드러나므로 카메라도 함께 눕힘
+    if (tw.phi1 !== undefined && mode === "map" && !cam.fly) cam.phi = tw.phi0! + (tw.phi1 - tw.phi0!) * e;
     if (tw.t >= 1) four.tween = null;
     syncFourUi();
   } else if (four.spin) {
@@ -118,13 +166,18 @@ function update4(dt: number): void {
   camU.uP4.value = four.persp ? 1 : 0;
   camU.uL.value = cam.r * 3;
   camU.uTint.value = four.tint ? 1 : 0;
-  camU.uWTgt.value = -lightTravelPc(Math.hypot(cam.target[0], cam.target[1], cam.target[2]));
+  camU.uSeeT.value = space4.seeT ? 1 : 0;
+  camU.uMix.value = space4.seeT ? clamp(1 - m[15] * m[15], 0, 1) : 0;
+  const st = seen(cam.target);
+  camU.uWTgt.value = st.w;
+  camU.uTgtShift.value.set(cam.target[0] * (st.S - 1), cam.target[1] * (st.S - 1), cam.target[2] * (st.S - 1));
 }
 function wrapPi(a: number): number { return a - 2 * Math.PI * Math.round(a / (2 * Math.PI)); }
 function is4dActive(): boolean { return wMixed(four.ang) || four.persp; }
 /** 화면에 그리는 것과 같은 4차원 변환 (이름표·고르기용): 태양 기준 위치 p, w → 카메라 기준 3차원 */
-function to4(p: ArrayLike<number>, w: number): [number, number, number] {
-  const q = project4(four.M, p[0] - cam.target[0], p[1] - cam.target[1], p[2] - cam.target[2], (w - camU.uWTgt.value) * four.wk, four.persp ? 1 : 0, camU.uL.value);
+function to4(p: ArrayLike<number>, w: number, S = 1): [number, number, number] {
+  const sh = camU.uTgtShift.value;
+  const q = project4(four.M, p[0] * S - cam.target[0] - sh.x, p[1] * S - cam.target[1] - sh.y, p[2] * S - cam.target[2] - sh.z, (w - camU.uWTgt.value) * four.wk, four.persp ? 1 : 0, camU.uL.value);
   return [q[0] - (camPos[0] - cam.target[0]), q[1] - (camPos[1] - cam.target[1]), q[2] - (camPos[2] - cam.target[2])];
 }
 /** 4차원 조작 막대를 지금 각도에 맞춤 */
@@ -150,7 +203,7 @@ function goPreset4(key: string): void {
   to[0] = to[1] = to[3] = 0;
   to[XW] = p.XW * DEG4; to[YW] = p.YW * DEG4; to[ZW] = p.ZW * DEG4;
   four.ang = four.ang.map((a) => wrapPi(a));
-  four.tween = { t: 0, from: four.ang.slice(), to };
+  four.tween = { t: 0, from: four.ang.slice(), to, phi0: cam.phi, phi1: key === "cone" ? 1.42 : key === "tilt" ? 1.2 : undefined };
   setText("four4Note", p.text);
 }
 /** 4차원 좌표축 표시 (왼쪽 아래): X·Y·Z·W 축을 지금의 4차원 회전과 카메라로 투영 */
@@ -199,7 +252,7 @@ function hud4Text(): string {
   const ang = "XW " + a[0] + "° · YW " + a[1] + "° · ZW " + a[2] + "°";
   const state = wMixed(four.ang) ? ang : is4dActive() ? "w 원근만" : mode === "system" ? "w가 화면에 수직" : "w가 화면에 수직 (3차원 단면)";
   if (mode === "system") return "4차원 · w = 시간" + (sys.wlYears ? " (세계선 " + fmtYearsShort(sys.wlYears) + ")" : "") + " · " + state;
-  return "4차원 · w = 빛이 떠난 때 × c · " + state;
+  return "4차원 · " + (space4.seeT ? "w = 빛이 떠난 때 × c" : "w = 0 (같은 순간)") + " · " + state + " · " + (space4.expand ? "팽창" : "팽창 없음");
 }
 const uScale = { value: 1 }, uRes = { value: new THREE.Vector2(1, 1) };
 
@@ -266,7 +319,7 @@ function applyTime(): void {
   if (dt === appliedDt) return;
   appliedDt = dt;
   now.la = TL.la(dt);
-  now.s = Math.min(Math.pow(10, now.la), 1e30);
+  now.s = space4.expand ? Math.min(Math.pow(10, now.la), 1e30) : 1;
   now.dtLocal = clamp(dt, -1e7, 1e7);
   now.sun = sunAt(dt / 1e9);
   now.local = 1 - smooth(1e7, 4e7, Math.abs(dt));
@@ -302,7 +355,8 @@ let data: AtlasData;
 let fc: Forecasts | null = null;
 let starMat: THREE.ShaderMaterial, hostMat: THREE.ShaderMaterial, galMat: THREE.ShaderMaterial, mwMat: THREE.ShaderMaterial, dustMat: THREE.ShaderMaterial;
 let mwPts: THREE.Points, dustPts: THREE.Points, starPts: THREE.Points, hostPts: THREE.Points, galMesh: THREE.Mesh;
-const shells: { g: THREE.LineSegments; R: number; name: string; note: string }[] = [];
+const shells: { g: THREE.LineSegments; R: number; name: string; note: string; ok: boolean }[] = [];
+let galW: THREE.InstancedBufferAttribute | null = null, galS: THREE.InstancedBufferAttribute | null = null;
 /** 은하 무리: 0 우주 팽창을 따름, 1 국부 은하군(고정), 2 안드로메다 무리, 3 마젤란 은하, 4 은하 중심을 도는 위성, 5 밀코메다 */
 interface GalEntry { name: string; sub: string; pos: number[]; R: number; type: number; absMag: number; group: number; g?: Galaxy; o?: NamedObject }
 const gals: GalEntry[] = [];
@@ -363,7 +417,6 @@ function buildLayers(): void {
   const ng = gals.length, GP = new Float64Array(3 * ng), E1 = new Float32Array(3 * ng), E2 = new Float32Array(3 * ng), gp = new Float32Array(4 * ng), gi = new Float32Array(ng), gg = new Float32Array(ng), gw = new Float32Array(ng);
   gals.forEach((e, i) => {
     GP.set(e.pos, 3 * i);
-    gw[i] = -lightTravelPc(Math.hypot(e.pos[0], e.pos[1], e.pos[2]));
     const [a, bb] = diskAxes(e);
     E1.set(a, 3 * i); E2.set(bb, 3 * i);
     gp[4 * i] = e.type; gp[4 * i + 1] = hash01(e.sub || e.name); gp[4 * i + 2] = e.absMag; gp[4 * i + 3] = e.type === 3 ? 1 : 0; gi[i] = i; gg[i] = e.group;
@@ -373,7 +426,7 @@ function buildLayers(): void {
   geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
   geo.setAttribute("gHi", new THREE.InstancedBufferAttribute(gs.hi, 3)); geo.setAttribute("gLo", new THREE.InstancedBufferAttribute(gs.lo, 3));
   geo.setAttribute("gE1", new THREE.InstancedBufferAttribute(E1, 3)); geo.setAttribute("gE2", new THREE.InstancedBufferAttribute(E2, 3));
-  geo.setAttribute("gP", new THREE.InstancedBufferAttribute(gp, 4)); geo.setAttribute("gIdx", new THREE.InstancedBufferAttribute(gi, 1)); geo.setAttribute("gGroup", new THREE.InstancedBufferAttribute(gg, 1)); geo.setAttribute("gW", new THREE.InstancedBufferAttribute(gw, 1));
+  geo.setAttribute("gP", new THREE.InstancedBufferAttribute(gp, 4)); geo.setAttribute("gIdx", new THREE.InstancedBufferAttribute(gi, 1)); geo.setAttribute("gGroup", new THREE.InstancedBufferAttribute(gg, 1)); geo.setAttribute("gW", galW = new THREE.InstancedBufferAttribute(gw, 1)); geo.setAttribute("gS", galS = new THREE.InstancedBufferAttribute(new Float32Array(ng).fill(1), 1));
   geo.instanceCount = ng;
   galMat = new THREE.ShaderMaterial({
     uniforms: { ...camU, uMLim: { value: 20 }, uScale, uRes, uFade: { value: 1 }, uMinPx: { value: 1.6 }, uSelIdx: { value: -1 },
@@ -423,10 +476,10 @@ function buildLayers(): void {
   ];
   for (const [name, R, note, color] of shellDefs) {
     // 경계 위의 점은 모두 같은 w (그 경계의 빛이 떠난 때): 4차원으로 돌리면 과거 빛원뿔의 단면으로 보임
-    const mat = new THREE.ShaderMaterial({ uniforms: { ...camU, uK: { value: 1 }, uShellW: { value: -lightTravelPc(R) }, uColor: { value: new THREE.Color(color) }, uOpacity: { value: 0.35 } }, vertexShader: SHELL_VS, fragmentShader: SHELL_FS, transparent: true, depthTest: false, depthWrite: false });
+    const mat = new THREE.ShaderMaterial({ uniforms: { ...camU, uK: { value: 1 }, uShellW: { value: -R }, uShellS: { value: 1 }, uColor: { value: new THREE.Color(color) }, uOpacity: { value: 0.35 } }, vertexShader: SHELL_VS, fragmentShader: SHELL_FS, transparent: true, depthTest: false, depthWrite: false });
     const g = new THREE.LineSegments(ring(R), mat);
     g.frustumCulled = false; scene.add(g);
-    shells.push({ g, R, name, note });
+    shells.push({ g, R, name, note, ok: true });
   }
 }
 
@@ -559,7 +612,7 @@ function updateLayers(): void {
     const k = Math.min(now.s, 1e12), u = (s.g.material as THREE.ShaderMaterial).uniforms, R = s.R * k;
     u.uK.value = k;
     u.uOpacity.value = layers.shells ? 0.4 * smooth(R * 0.02, R * 0.15, r) * (1 - smooth(R * 30, R * 300, r)) : 0;
-    s.g.visible = u.uOpacity.value > 0.003;
+    s.g.visible = u.uOpacity.value > 0.003 && s.ok;
   }
 }
 /** bvToTemp의 역함수 (이분법) */
@@ -576,7 +629,8 @@ let shown: { el: HTMLDivElement; c: Cand }[] = [];
 const vtmp = new THREE.Vector3();
 /** 태양 기준 위치 p (w를 주지 않으면 빛이 온 거리로) → 화면 좌표. 셰이더와 같은 4차원 변환을 거침 */
 function project(p: ArrayLike<number>, w?: number): [number, number, number] | null {
-  const q = to4(p, w ?? -lightTravelPc(Math.hypot(p[0], p[1], p[2])));
+  let q: [number, number, number];
+  if (w === undefined) { const sn = seen(p); if (!sn.ok) return null; q = to4(p, sn.w, sn.S); } else q = to4(p, w);
   vtmp.set(q[0], q[1], q[2]).applyMatrix4(camera.matrixWorldInverse);
   const depth = -vtmp.z;
   if (depth <= 0) return null;
@@ -713,6 +767,25 @@ function starName(i: number): string {
 function row(k: string, v: string): string { return "<dt>" + k + "</dt><dd>" + v + "</dd>"; }
 function lbText(p: ArrayLike<number>): string { const [l, b] = galLB(p); return "l = " + l.toFixed(2) + "°, b = " + b.toFixed(2) + "°"; }
 function fmtL(L: number): string { return L < 0.01 ? sci(L) : L < 1e4 ? L.toPrecision(3) : sci(L, 1); }
+/** 카드: 원소 구성 (질량 비율 막대 + 층 구조) */
+function compRows(c: Composition): string {
+  const bulk = bulkComposition(c), top = bulk.slice(0, 7), lm = layerMasses(c);
+  const pct = (f: number) => (f * 100 < 1 ? (f * 100).toFixed(1) : Math.round(f * 100)) + "%";
+  const bar = '<span class="elbar">' + top.map((x) => '<i style="width:' + (x.f * 100).toFixed(2) + "%;background:rgb(" + ELEMENTS[x.el].color.map((v) => Math.round(v * 255)).join(",") + ')" title="' + ELEMENTS[x.el].ko + '"></i>').join("") + "</span>";
+  return row("구성 원소 (질량)", top.map((x) => ELEMENTS[x.el].ko + " " + pct(x.f)).join(" · ") + bar)
+    + row("층 구조 (안 → 밖)", c.layers.map((l, k) => l.name + " " + pct(lm[k])).join(" · ") + "<small>" + (c.note ? c.note + " " : "") + (c.src ? "근거: " + c.src : "") + "</small>");
+}
+let cardComp: { name: string; comp: Composition; M: number; R: number } | null = null;
+/** 카드: 4차원 좌표 w와 그 빛이 떠날 때의 모습 */
+function row4(pos: number[]): string {
+  if (!space4.seeT) return row("4차원 좌표 w", "0<small>공간 = 시간 조건이 꺼져 있어 모든 천체가 같은 순간에 놓임</small>");
+  const sn = seen(pos);
+  if (!sn.ok) return row("4차원 좌표 w", "없음<small>입자 지평선 밖: 이 시점에는 아직 빛이 오지 않아 보이지 않음</small>");
+  const yrs = -sn.w / LY_PC, ago = yrs < 1 ? (yrs * 365.25).toPrecision(3) + "일" : fmtYearsShort(yrs);
+  const d = Math.hypot(pos[0], pos[1], pos[2]);
+  return row("4차원 좌표 w", "−" + fmtPc(-sn.w) + "<small>보이는 빛이 " + ago + " 전에 떠남 (빅뱅 뒤 " + fmtYearsShort(Math.max(cone.age - yrs, 0)) + ")</small>")
+    + (sn.ratio < 0.9999 && space4.expand ? row("빛이 떠날 때 거리", fmtPc(d * sn.ratio) + "<small>그때 우주 크기는 지금의 " + (sn.ratio < 0.01 ? sn.ratio.toExponential(1) : sn.ratio.toFixed(3)) + "배 (z = " + (1 / sn.ratio - 1).toPrecision(3) + ")</small>") : "");
+}
 function lifeText(y: number): string { return !isFinite(y) ? "끝나지 않음" : fmtYearsShort(y); }
 
 function starCard(i: number): { sub: string; rows: string; fut: string } {
@@ -752,19 +825,24 @@ function refreshCard(force = false): void {
   card.hidden = false;
   const pos = selPos(s), d = Math.hypot(pos[0], pos[1], pos[2]);
   let sub = "", rows = "", fut = "", text = "", canSystem = false;
+  cardComp = null;
   const lt = d / LY_PC;
   const common = s.kind === "body" ? "" : row("태양에서 거리" + (time.dt ? " (그 시점)" : ""), fmtPc(d) + "<small>" + fmtPcUnit(d) + " · 빛으로 " + (lt < 1 ? (lt * 365.25).toPrecision(3) + "일" : fmtYearsShort(lt)) + "</small>") + (d > 0 ? row("은하 좌표", lbText(pos)) : "")
-    + (d > 0 ? row("4차원 좌표 w", "−" + fmtPc(lightTravelPc(d)) + "<small>지금 보이는 빛이 " + (lightTravelPc(d) / LY_PC < 1 ? (lightTravelPc(d) / LY_PC * 365.25).toPrecision(3) + "일" : fmtYearsShort(lightTravelPc(d) / LY_PC)) + " 전에 떠남 · 지도에서 w 축 자리</small>") : "");
+    + (d > 0 ? row4(pos) : "");
   if (s.kind === "sun") {
     sub = "G2V 주계열성 (지금)"; canSystem = true;
     const st = sunAt(time.dt / 1e9);
-    rows = row("질량 · 반지름 (지금)", "1 M☉ (1.989 × 10³⁰ kg) · 1 R☉ (69.6만 km)") + row("표면 · 중심 온도", "5,772 K · 1,570만 K") + row("광도", "3.828 × 10²⁶ W") + row("나이", "45.7억 년") + row("구성 (질량)", "수소 73% · 헬륨 25% · 그 밖 2%") + row("은하 공전", "약 2억 1,500만 년에 한 바퀴 (233 km/s)");
+    rows = row("질량 · 반지름 (지금)", "1 M☉ (1.989 × 10³⁰ kg) · 1 R☉ (69.6만 km)") + row("표면 · 중심 온도", "5,772 K · 1,570만 K") + row("광도", "3.828 × 10²⁶ W") + row("나이", "45.7억 년") + compRows(BODY_COMP["태양"]) + row("은하 공전", "약 2억 1,500만 년에 한 바퀴 (233 km/s)");
+    cardComp = { name: "태양", comp: BODY_COMP["태양"], M: 1.989e30, R: 6.957e8 };
     fut = row(fmtDt(time.dt) + "의 태양", st.phase) + row("광도 · 반지름", fmtL(st.L) + " L☉ · " + (st.R < 0.1 ? st.R.toFixed(4) : st.R.toPrecision(3)) + " R☉") + row("표면 온도 · 질량", Math.round(st.T).toLocaleString("ko-KR") + " K · " + st.M.toFixed(2) + " M☉");
     text = SUN_POS_NOTE + " 주계열 광도는 Gough (1981), 적색거성 이후는 Schröder & Smith (2008)의 진화 계산을 따릅니다.";
   } else if (s.kind === "star" || s.kind === "host") {
     const ps = s.kind === "host" ? data.systems[s.i] : data.systems.find((x) => x.hyg === s.i);
     const hi = s.kind === "star" ? s.i : ps && ps.hyg >= 0 ? ps.hyg : -1;
-    if (hi >= 0) { const c = starCard(hi); sub = c.sub; rows = c.rows; fut = c.fut; }
+    if (hi >= 0) {
+      const c = starCard(hi), ph = phys[hi];
+      sub = c.sub; rows = c.rows + compRows(starComposition(ph.lum === 7 ? "wd" : ph.lum >= 1 && ph.lum <= 3 ? "giant" : "ms")); fut = c.fut;
+    }
     if (ps) {
       canSystem = true;
       sub = ps.planets.length + "개 행성을 가진 별" + (sub ? " · " + sub : "");
@@ -830,6 +908,12 @@ function refreshCard(force = false): void {
         + (f.rings ? row("고리", f.rings) : "") + (f.moons ? row("알려진 위성", f.moons + "개") : "");
       text = f.features;
     }
+    const comp = BODY_COMP[s.name] ?? (pl && !sysIsSolar ? exoComposition(pl.R) : undefined);
+    if (comp) {
+      rows += compRows(comp);
+      const M = f ? f.mass * 1e24 : (pl?.mass ?? Math.pow(pl!.R, 2.06)) * 5.972e24, R = f ? f.radius * 1e3 : pl!.R * 6.371e6;
+      cardComp = { name: s.name, comp, M, R };
+    }
     if (pl) {
       const st = sunAt(dG), a = pl.a, S = st.L / (a * a);
       rows += row("궤도 (그 시점)", "a = " + a.toPrecision(4) + " AU · e = " + pl.e.toFixed(4) + " · i = " + pl.i.toFixed(2) + "°" + (Math.abs(time.dt) > 10 && Math.abs(time.dt) <= SECULAR_LIMIT_YEARS ? "<small>라플라스–라그랑주 영년 섭동</small>" : ""));
@@ -845,6 +929,7 @@ function refreshCard(force = false): void {
   $("icFutureBox").hidden = !fut;
   $("icText").textContent = text;
   $("icSystem").hidden = !canSystem || mode === "system";
+  $("icPixel").hidden = !cardComp || mode === "impact";
   $("flyBtn").hidden = s.kind === "body";
 }
 function mosterHalo(lmStar: number): number {
@@ -871,8 +956,239 @@ function flyToSel(s: Sel): void {
   return flyTo(get(), 0.04, s.name, { get });
 }
 
+// ---------- 픽셀 충돌 ----------
+// 같은 화면·같은 시간축 안의 한 장면: 사건 목록이나 천체 카드에서 들어가고, 돌아가면 지도·행성계로 이어진다.
+const imp = new ImpactView();
+let impBack: "map" | "system" = "map", impScene: Scene | null = null, impMake: ((q: number) => ImpactSetup) | null = null, impQ = 0;
+function enterImpact(make: (q: number) => ImpactSetup, scene: Scene | null, title: string): void {
+  impMake = make; impScene = scene;
+  if (mode !== "impact") impBack = mode;
+  $("fade").classList.add("on");
+  setTimeout(() => {
+    mode = "impact";
+    labelsEl.hidden = true; sys.hideLabels(); $("selRing").hidden = true;
+    $("mapControls").hidden = true; $("sysControls").hidden = true; $("impControls").hidden = false;
+    $("impCard").hidden = false; $("infoCard").hidden = true; $("sysCard").hidden = true;
+    const setup = make(impQ);
+    imp.start(setup);
+    imp.mode = 0; imp.cut = !!setup.still;
+    syncImpUi();
+    $("impFollow").querySelector<HTMLElement>('[data-fl="-2"]')!.hidden = !setup.fixed;
+    setFollowChip(setup.follow);
+    setText("ipTitle", title);
+    setText("ipWhen", scene ? scene.when : setup.still ? "실제 층 구조와 원소 비율로 쌓은 픽셀 천체" : "가상 충돌");
+    setText("ipText", scene ? scene.text : setup.still ? "픽셀 하나는 그 층의 원소 비율에 따라 뽑은 원소 덩어리입니다. ‘원소’ 색으로 바꾸면 핵의 철·니켈, 맨틀의 산소·마그네슘·규소, 얼음의 수소·산소가 보입니다." : "두 천체를 같은 크기의 픽셀로 쌓아 정한 속력과 각도로 부딪칩니다. 충돌 속력이 탈출 속도에 가까우면 대부분 다시 합쳐지고, 훨씬 빠르면 산산이 흩어집니다.");
+    setText("ipSrc", scene ? "근거: " + scene.src : "질량·반지름: NASA 행성 자료표 · 층 구조: 원소 구성 모형의 근거 문헌");
+    if (scene?.years !== undefined) setTime(scene.years);
+    setTimeout(() => $("fade").classList.remove("on"), 60);
+  }, 320);
+}
+function exitImpact(): void {
+  $("fade").classList.add("on");
+  setTimeout(() => {
+    imp.stop();
+    mode = impBack;
+    $("impControls").hidden = true; $("impCard").hidden = true;
+    if (mode === "map") { labelsEl.hidden = false; $("mapControls").hidden = false; }
+    else { $("sysControls").hidden = false; $("sysCard").hidden = false; }
+    refreshCard(true);
+    setTimeout(() => $("fade").classList.remove("on"), 60);
+  }, 320);
+}
+function setFollowChip(f: number): void { $("impFollow").querySelectorAll<HTMLElement>("[data-fl]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.fl! === f))); }
+function syncImpUi(): void {
+  $("impMode").querySelectorAll<HTMLElement>("[data-cm]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.cm! === imp.mode)));
+  $("impCut").setAttribute("aria-pressed", String(imp.cut));
+  $("impQ").querySelectorAll<HTMLElement>("[data-q]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.q! === impQ)));
+  const still = !!imp.info.setup?.still;
+  $("impPlay").hidden = still;
+  $("impPlay").textContent = imp.info.running ? "일시정지" : imp.info.done ? "더 계속하기" : "계속";
+}
+const fmtHours = (t: number) => t < 3600 ? Math.round(t / 60) + "분" : Math.floor(t / 3600) + "시간 " + Math.round((t % 3600) / 60) + "분";
+/** 분석 카드 */
+function refreshImpactCard(): void {
+  const I = imp.info, a = I.a, st = I.setup;
+  if (!st) return;
+  syncImpUi();
+  const pct = (f: number) => (f * 100 < 0.1 && f > 0 ? (f * 100).toFixed(2) : (f * 100).toFixed(1)) + "%";
+  const elList = (l: { el: string; f: number }[]) => l.slice(0, 6).map((x) => ELEMENTS[x.el as keyof typeof ELEMENTS].ko + " " + pct(x.f)).join(" · ");
+  let h = row("픽셀", I.n.toLocaleString("ko-KR") + "개<small>" + st.bodies.map((b) => b.name).join(" + ") + (st.fixed ? " · " + st.fixed.name + "(고정)" : "") + "</small>");
+  if (I.progress) h += row("상태", I.progress);
+  if (!st.still) h += row("경과 시간", fmtHours(I.t) + " / " + fmtHours(st.duration) + (I.dt ? "<small>계산 간격 " + I.dt.toFixed(I.dt < 10 ? 1 : 0) + "초</small>" : ""));
+  if (a && !st.still) {
+    if (st.fixed) {
+      h += row(st.fixed.name + " 둘레를 도는 조각 (고리)", pct(a.disk)) + row(st.fixed.name + "에 떨어짐", pct(a.absorbed)) + row("튀어나감", pct(a.escape))
+        + row("덩어리 수 (픽셀 5개 이상)", String(a.clumps) + (st.key === "sl9" ? "<small>관측: 조각 21개 (해상도가 낮으면 적게 나옴)</small>" : ""));
+      if (a.disk > 0) h += row("고리의 원소", elList(a.diskEl));
+    } else if (I.contact) {
+      h += row("하나로 합쳐진 행성", pct(a.planet)) + row("행성 둘레 원반", pct(a.disk) + "<small>달 질량의 " + a.diskLunar.toFixed(2) + "배</small>") + row("튀어나가 탈출", pct(a.escape));
+      if (a.disk > 0) {
+        h += row("원반 물질의 출처", "부딪친 천체(" + st.bodies[1].name + ")에서 " + pct(a.diskFromImpactor) + (st.key === "theia" ? "<small>표준 모형: 70–90% (Canup 2004)</small>" : ""));
+        h += row("철 비율: 원반 · 행성", pct(a.diskFe) + " · " + pct(a.planetFe) + (st.key === "theia" ? "<small>달은 철이 적음 (철 핵 질량 1–2%)</small>" : ""));
+        h += row("원반의 원소", elList(a.diskEl));
+      }
+      if (a.escape > 0.001) h += row("탈출한 물질의 원소", elList(a.escEl));
+    } else h += row("상태", "다가오는 중 (아직 닿지 않음)");
+    h += row("충돌로 1000 K 넘게 뜨거워진 질량", pct(a.hot)) + row("가장 뜨거운 픽셀", a.Tmax > 2e4 ? "2만 K 넘음<small>이 모형은 증발·복사를 넣지 않아 실제보다 높게 나옴</small>" : Math.round(a.Tmax).toLocaleString("ko-KR") + " K");
+  }
+  if (st.still && st.bodies[0]) h += compRows(st.bodies[0].comp);
+  setText("ipRows", h, true);
+  // 원소 범례
+  setText("ipLegend", imp.mode === 1 ? I.elements.map((el) => '<span><i style="background:rgb(' + ELEMENTS[el as keyof typeof ELEMENTS].color.map((v) => Math.round(v * 255)).join(",") + ')"></i>' + ELEMENTS[el as keyof typeof ELEMENTS].ko + "</span>").join("")
+    : imp.mode === 0 ? I.layers.map((l) => '<span><i style="background:rgb(' + l.color.map((v) => Math.round(v * 255)).join(",") + ')"></i>' + (st.bodies.length > 1 ? st.bodies[l.body].name + " " : "") + l.name + "</span>").join("")
+    : imp.mode === 3 ? st.bodies.map((b, k) => '<span><i style="background:' + ["#59a6ff", "#ff8c40", "#99e666"][k % 3] + '"></i>' + b.name + "</span>").join("")
+    : '<span><i style="background:#0d1459"></i>차가움</span><span><i style="background:#e6261a"></i>2000 K</span><span><i style="background:#ffd933"></i>5000 K</span><span><i style="background:#fff"></i>2만 K</span>', true);
+}
+imp.onChange = refreshImpactCard;
+// 시나리오 단추와 직접 고르기
+SCENES.forEach((sc) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip";
+  b.innerHTML = sc.label + "<small>" + sc.when + "</small>";
+  b.addEventListener("click", () => enterImpact(sc.make, sc, sc.label));
+  $("impScenes").appendChild(b);
+});
+for (const id of ["cuA", "cuB"]) {
+  const sel = $<HTMLSelectElement>(id);
+  for (const nm of PICKABLE) { const o = document.createElement("option"); o.value = nm; o.textContent = nm; sel.appendChild(o); }
+}
+$<HTMLSelectElement>("cuA").value = "지구"; $<HTMLSelectElement>("cuB").value = "달";
+$<HTMLInputElement>("cuV").addEventListener("input", (e) => { const v = +(e.currentTarget as HTMLInputElement).value; setText("cuVo", v === 0 ? "탈출 속도" : v + " km/s"); });
+$<HTMLInputElement>("cuAng").addEventListener("input", (e) => setText("cuAngO", (e.currentTarget as HTMLInputElement).value + "°"));
+$("cuGo").addEventListener("click", () => {
+  const a = $<HTMLSelectElement>("cuA").value, b = $<HTMLSelectElement>("cuB").value, v = +$<HTMLInputElement>("cuV").value, ang = +$<HTMLInputElement>("cuAng").value;
+  if (a === b) { setText("cuVo", "다른 천체를 고르세요"); return; }
+  enterImpact((q) => customScene(a, b, v, ang, q), null, a + " × " + b + " (" + (v ? v + " km/s" : "탈출 속도") + ", " + ang + "°)");
+});
+$("impBack").addEventListener("click", exitImpact);
+$("impPlay").addEventListener("click", () => { if (imp.info.running) imp.pause(); else imp.resume(); });
+$("impMode").addEventListener("click", (e) => { const b = (e.target as HTMLElement).closest<HTMLElement>("[data-cm]"); if (!b) return; imp.mode = +b.dataset.cm! as ColorMode; refreshImpactCard(); });
+$("impCut").addEventListener("click", () => { imp.cut = !imp.cut; syncImpUi(); });
+$("impFollow").addEventListener("click", (e) => { const b = (e.target as HTMLElement).closest<HTMLElement>("[data-fl]"); if (!b) return; imp.setFollow(+b.dataset.fl!); setFollowChip(+b.dataset.fl!); });
+$("impQ").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>("[data-q]");
+  if (!b || !impMake) return;
+  impQ = +b.dataset.q!;
+  const st = impMake(impQ);
+  imp.start(st); imp.cut = !!st.still; setFollowChip(st.follow); syncImpUi();
+});
+$("icPixel").addEventListener("click", () => { const c = cardComp; if (c) enterImpact((q) => stillBody(c.name, c.comp, c.M, c.R, q), null, c.name + " — 픽셀 단면"); });
+$("evImpact").addEventListener("click", () => { const k = $("evImpact").dataset.scene, sc = SCENES.find((x) => x.key === k); if (sc) enterImpact(sc.make, sc, sc.label); });
+
+// ---------- 실시간 우주 정보 ----------
+let LIVE: { live: Live; lit: Literature } = { live: { generated: "", solar: {}, neo: {}, exoplanets: {}, satellites: [], horizons: { pos: {} }, papers: { checked: [], accepted: [], pending: [] }, sources: [] }, lit: { checked: "", measurements: [] } };
+let liveDirect: { at: Date; names: string[] } | null = null;
+const liveAdded = new Map<string, string>();
+const MON: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+/** JPL CAD 날짜 "2026-Nov-05 12:34" → Date */
+function cadDate(s: string): Date { const m = /(\d{4})-(\w{3})-(\d{2}) (\d{2}):(\d{2})/.exec(s); return m ? new Date(Date.UTC(+m[1], MON[m[2]] ?? 0, +m[3], +m[4], +m[5])) : new Date(s); }
+const yearsFromNow = (d: Date) => (d.getTime() - Date.now()) / (365.25 * 864e5);
+const LD_KM = 384400, AU_KM = 1.495978707e8;
+/** NASA 외계행성 기록에서 최근 등록된 행성을 지도에 더함 (이미 있는 행성은 건너뜀) */
+function mergeExoplanets(rows: ExoRow[]): number {
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const byName = new Map(data.systems.map((sy) => [norm(sy.name), sy]));
+  const known = new Set(data.systems.flatMap((sy) => sy.planets.map((p) => norm(p.name))));
+  let added = 0;
+  for (const r of rows) {
+    if (known.has(norm(r.pl_name)) || !(r.sy_dist > 0)) continue;
+    let sy = byName.get(norm(r.hostname));
+    if (!sy) {
+      sy = { name: r.hostname, pos: radecToGal(r.ra, r.dec, r.sy_dist) as [number, number, number], dist: r.sy_dist, hyg: -1, star: { mass: r.st_mass, radius: r.st_rad, temp: r.st_teff, feh: r.st_met, spect: r.st_spectype, vmag: r.sy_vmag }, planets: [] };
+      data.systems.push(sy); byName.set(norm(r.hostname), sy);
+    }
+    sy.planets.push({ name: r.pl_name, mass: r.pl_bmassj, radius: r.pl_radj ?? (r.pl_rade ? r.pl_rade / 11.209 : null), period: r.pl_orbper, a: r.pl_orbsmax, e: r.pl_orbeccen, year: r.disc_year, method: r.discoverymethod, temp: r.pl_eqt });
+    known.add(norm(r.pl_name)); liveAdded.set(r.pl_name, r.releasedate); added++;
+  }
+  return added;
+}
+/** 실시간 자료에서 온 사건: 검증된 논문의 사건 + 1년 안 가까운 소행성 접근 */
+function liveEvents(): TimedEvent[] {
+  const out: TimedEvent[] = [];
+  for (const m of LIVE.lit.measurements) if (m.event && m.status === "accepted") out.push({ years: yearsFromNow(new Date(m.event.date + "T12:00:00Z")), label: m.event.label, detail: m.event.detail + " (" + (m.journal ?? "") + ")", scale: "earth" });
+  for (const a of (LIVE.live.neo.approaches ?? []).filter((x) => x.distAU * AU_KM < 2 * LD_KM).slice(0, 8)) {
+    const D = a.diameter ? a.diameter * 1000 : a.H !== null ? diameterFromH(a.H) : null;
+    out.push({ years: yearsFromNow(cadDate(a.date)), label: "소행성 " + a.name.replace(/^\(|\)$/g, "") + "이 달 거리의 " + (a.distAU * AU_KM / LD_KM).toFixed(2) + "배까지 접근", detail: "JPL 근접 접근 자료 (실시간 수집). 상대 속도 " + a.vRel.toFixed(1) + " km/s" + (D ? ", 지름 약 " + (D < 1000 ? Math.round(D) + " m" : (D / 1000).toFixed(1) + " km") : "") + ". 지구에 닿지 않습니다.", scale: "earth" });
+  }
+  return out;
+}
+function withLive(ev: TimedEvent[]): TimedEvent[] { return [...ev.filter((e) => !e.label.startsWith("소행성 ") || e.impact), ...liveEvents()].sort((a, b) => a.years - b.years); }
+/** 실시간 인공위성 궤도 요소를 행성계 장면의 위성 목록에 반영 */
+function liveSatList(): [string, number, number, number, string, number?, number?][] {
+  const list: [string, number, number, number, string, number?, number?][] = SATELLITES_EARTH.map((x) => [...x]);
+  const nowDays = (Date.now() - Date.UTC(2000, 0, 1, 12)) / 864e5;
+  for (const s of LIVE.live.satellites) {
+    const st = satNow(s, new Date()), note = "실시간 궤도 요소 (CelesTrak, 기준 " + s.epoch.slice(0, 16).replace("T", " ") + " UTC, " + st.ageDays.toFixed(1) + "일 전)";
+    const k = list.findIndex((x) => x[0] === s.name);
+    const item: [string, number, number, number, string, number, number] = [s.name, Math.round(st.alt), +s.i.toFixed(2), +st.periodMin.toFixed(2), note, st.phase, nowDays];
+    if (k >= 0) list[k] = item; else list.splice(2, 0, item);
+  }
+  return list;
+}
+/** 사이트의 케플러 모형으로 계산한 행성 위치를 JPL Horizons와 비교 (각 오차) */
+function horizonsCheck(): { name: string; arcmin: number }[] {
+  const H = LIVE.live.horizons;
+  if (!H.jd) return [];
+  const days = H.jd - 2451545.0, v = new THREE.Vector3(), out: { name: string; arcmin: number }[] = [];
+  for (const p of solarSystem().planets) {
+    const h = H.pos[p.name];
+    if (!h) continue;
+    orbitPos(p, days, v);
+    const e = [v.x, -v.z, v.y], dot = e[0] * h[0] + e[1] * h[1] + e[2] * h[2], ang = Math.acos(clamp(dot / (Math.hypot(...e) * Math.hypot(...h)), -1, 1));
+    out.push({ name: p.name, arcmin: ang * 180 / Math.PI * 60 });
+  }
+  return out;
+}
+function renderLive(): void {
+  const L = LIVE.live, lit = LIVE.lit;
+  const okN = L.sources.filter((x) => x.ok).length;
+  setText("lvStamp", (L.generated ? "스냅샷 수집 " + L.generated.slice(0, 16).replace("T", " ") + " UTC (원천 " + okN + "/" + L.sources.length + " 성공, 몇 시간마다 자동 갱신)" : "아직 수집된 스냅샷이 없습니다 (배포할 때 GitHub Actions가 만듭니다)") + (liveDirect ? " · 브라우저에서 직접 갱신 " + liveDirect.at.toTimeString().slice(0, 5) + ": " + (liveDirect.names.join(", ") || "실패 (스냅샷 사용)") : ""));
+  let h = "";
+  const sol = L.solar;
+  if (sol.monthly?.length) {
+    const last = sol.monthly[sol.monthly.length - 1];
+    h += row("태양 흑점수 (" + last[0] + ")", Math.round(last[1]) + " · F10.7 " + Math.round(last[3]) + " sfu" + (sol.kp ? "<small>지금 Kp " + sol.kp.value.toFixed(1) + " (" + kpStorm(sol.kp.value) + ")" + (sol.flares?.length ? " · 최근 7일 가장 센 플레어 " + [...sol.flares].sort((a, b) => flareRank(b.cls) - flareRank(a.cls))[0].cls : "") + "</small>" : ""));
+    const fit = fitSolarCycle(sol.monthly);
+    if (fit) {
+      const nextYr = sol.predicted?.find((r) => r[0] >= new Date(Date.now() + 365 * 864e5).toISOString().slice(0, 7));
+      h += row("태양 활동 주기 25 예측", "극대 " + fit.label(fit.maxAt) + " (흑점수 " + Math.round(fit.maxR) + ") · 다음 극소 " + fit.label(fit.minAt) + "<small>관측 " + fit.nObs + "개월에 Hathaway 외 (1994) 주기 함수를 맞춤 (오차 rms " + fit.rms.toFixed(0) + ")" + (nextYr ? " · NOAA 1년 뒤 예측 흑점수 " + Math.round(nextYr[1]) : "") + "</small>");
+    }
+  }
+  const ap = L.neo.approaches ?? [];
+  if (ap.length) {
+    const c = [...ap].sort((a, b) => a.distAU - b.distAU)[0];
+    h += row("1년 안 가까운 소행성 접근", ap.length + "번 (0.05 AU 안)<small>가장 가까움: " + c.name + " · " + cadDate(c.date).toISOString().slice(0, 10) + " · 달 거리의 " + (c.distAU * AU_KM / LD_KM).toFixed(2) + "배 · " + c.vRel.toFixed(1) + " km/s</small>");
+  }
+  for (const r of (L.neo.risks ?? []).slice(0, 3)) {
+    const D = r.diameter ? r.diameter * 1000 : diameterFromH(r.H), fx = impactEffects(D, r.v || 17);
+    h += row("충돌 위험: " + r.name, "확률 1/" + Math.round(1 / Math.max(r.ip, 1e-12)).toLocaleString("ko-KR") + " (" + r.range + ")<small>지름 약 " + (D < 1000 ? Math.round(D) + " m" : (D / 1000).toFixed(1) + " km") + " · 토리노 " + r.ts + " · 부딪치면 " + (fx.E_Mt < 1 ? (fx.E_Mt * 1000).toPrecision(2) + " kt" : fx.E_Mt.toPrecision(2) + " Mt") + (fx.airburst ? " (대부분 공중 폭발)" : " · 충돌구 약 " + fx.craterKm!.toFixed(1) + " km") + "</small>");
+  }
+  if (L.exoplanets.count) h += row("확인된 외계행성 (NASA)", L.exoplanets.count.toLocaleString("ko-KR") + "개<small>지난 120일 새로 등록 " + (L.exoplanets.recent?.length ?? 0) + "개 → 지도에 없던 " + liveAdded.size + "개를 더함</small>");
+  for (const s of L.satellites.slice(0, 2)) { const st = satNow(s, new Date()); h += row(s.name, "고도 약 " + Math.round(st.alt) + " km · " + st.periodMin.toFixed(1) + "분에 한 바퀴<small>CelesTrak 궤도 요소 (" + st.ageDays.toFixed(1) + "일 전 기준) · 행성계 장면의 지구 둘레에 반영</small>"); }
+  const hc = horizonsCheck();
+  if (hc.length) h += row("모형 검증 (JPL Horizons)", "행성 위치 각 오차 최대 " + Math.max(...hc.map((x) => x.arcmin)).toFixed(1) + "′<small>" + hc.map((x) => x.name + " " + x.arcmin.toFixed(1) + "′").join(" · ") + " (J2000 궤도 요소의 케플러 계산 대 JPL 수치 적분)</small>");
+  const H0 = summarizeH0(lit.measurements, L.papers.accepted);
+  if (H0.early.n && H0.late.n) h += row("허블 상수 (논문 종합)", "초기 우주 " + H0.early.mean.toFixed(2) + " ± " + H0.early.sigma.toFixed(2) + " · 가까운 우주 " + H0.late.mean.toFixed(2) + " ± " + H0.late.sigma.toFixed(2) + " km/s/Mpc<small>학술지에 실린 측정만 역분산 가중 평균 · 두 값의 차이(‘허블 긴장’) " + H0.tension.toFixed(1) + "σ · 가까운 우주 값이 맞다면 (물질 비율을 그대로 두면) 우주 나이는 138억 년이 아니라 약 " + Math.round(ageForH0(H0.late.mean) * 10) + "억 년</small>");
+  const de = lit.measurements.find((m) => m.param === "w0wa" && m.status === "accepted");
+  if (de) h += row("암흑에너지 (DESI DR2)", "w₀ = " + de.value + " ± " + de.sigma + " · wₐ = " + de.value2 + " ± " + de.sigma2 + "<small>" + de.method + " · ‘약해지는 암흑에너지’ 시나리오에 적용 중</small>");
+  setText("lvRows", h, true);
+  // 논문 목록
+  const all = [...lit.measurements.map((m) => ({ ...m, src: "사람 검증" })), ...L.papers.accepted.map((m) => ({ ...m, src: "자동 수집" })), ...L.papers.pending.map((m) => ({ ...m, src: "자동 수집" }))];
+  setText("lvPaperSum", "논문에서 온 변인 (반영 " + all.filter((m) => m.status === "accepted").length + " · 보류 " + all.filter((m) => m.status === "pending").length + ")");
+  setText("lvPapers", '<ul class="plist">' + all.map((m) => "<li>" + (m.status === "accepted" ? '<span class="ok">반영</span> ' : '<span class="wait">보류</span> ') + "<b>" + (m.param === "H0" ? "H₀ = " + m.value + " ± " + m.sigma : m.param === "w0wa" ? "w₀ " + m.value + ", wₐ " + m.value2 : m.event ? m.event.label : m.value) + "</b> " + escapeHtml(m.method) + "<small>" + escapeHtml(m.title ?? "") + " — " + (m.journal ? escapeHtml(m.journal) : "학술지 미확인") + (m.arxiv ? " · arXiv:" + m.arxiv : "") + " · " + m.src + (m.reasons?.length ? " · 이유: " + m.reasons.map(escapeHtml).join(", ") : "") + "</small></li>").join("") + "</ul>", true);
+  setText("lvSources", L.sources.length ? '<ul class="srcs">' + L.sources.map((x) => "<li" + (x.ok ? "" : ' class="bad"') + ">" + (x.ok ? "✓ " : "✗ ") + escapeHtml(x.name) + "</li>").join("") + "</ul>" : "", true);
+}
+function flareRank(c: string): number { const k = "ABCMX".indexOf(c[0]); return k * 10 + (parseFloat(c.slice(1)) || 0); }
+function escapeHtml(x: string): string { return x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!); }
+async function liveTick(): Promise<void> {
+  const names = await refreshDirect(LIVE.live);
+  liveDirect = { at: new Date(), names };
+  renderLive();
+  if (mode === "system" && sysIsSolar) sys.setSatellites(liveSatList(), JWST_KM);
+}
+
 // ---------- 행성계 ----------
-let mode: "map" | "system" = "map";
+let mode: "map" | "system" | "impact" = "map";
 let sysIsSolar = false, sysHost: { life: number } | null = null;
 const J2000_NOW_DAYS = (Date.now() - Date.UTC(2000, 0, 1, 12)) / 86400000;
 function systemFor(s: Sel): SysData | null {
@@ -896,7 +1212,7 @@ function enterSystem(d: SysData): void {
     setText("four4Def", DEF4_SYS, true);
     showSysCard(d);
     $("missionBox").hidden = !d.real;
-    if (d.real) { sys.setSatellites(SATELLITES_EARTH, JWST_KM); mission = null; buildMissionUi(); }
+    if (d.real) { sys.setSatellites(liveSatList(), JWST_KM); mission = null; buildMissionUi(); }
     applySystemTime();
     refreshCard(true);
     setTimeout(() => $("fade").classList.remove("on"), 60);
@@ -960,7 +1276,7 @@ function buildMissionUi(): void {
   $("msRows").innerHTML = "";
   $("msGo").hidden = true;
   $("msVehicles").innerHTML = vehicleTable(null);
-  $("msSats").innerHTML = SATELLITES_EARTH.map(([n, alt, inc, P, note]) => row(n, alt.toLocaleString("ko-KR") + " km · " + inc + "° · " + (P < 120 ? P.toFixed(1) + "분" : (P / 60).toFixed(2) + "시간") + "<small>" + note + "</small>")).join("")
+  $("msSats").innerHTML = liveSatList().map(([n, alt, inc, P, note]) => row(n, alt.toLocaleString("ko-KR") + " km · " + inc + "° · " + (P < 120 ? P.toFixed(1) + "분" : (P / 60).toFixed(2) + "시간") + "<small>" + note + "</small>")).join("")
     + row("제임스 웹 우주 망원경", "L2 · 약 150만 km<small>태양–지구 라그랑주 점. 지구와 함께 1년에 한 바퀴 태양을 돕니다.</small>");
 }
 function vehicleTable(target: string | null): string {
@@ -1136,6 +1452,8 @@ $("events").addEventListener("click", (e) => {
   setTime(y);
   const ev = fc?.events.find((x) => x.years === y);
   if (ev) $("evDetail").textContent = ev.label + " — " + ev.detail;
+  $("evImpact").hidden = !ev?.impact;
+  if (ev?.impact) $("evImpact").dataset.scene = ev.impact;
 });
 
 // ---------- 시간 조작 ----------
@@ -1174,7 +1492,7 @@ $("fateChips").addEventListener("click", (e) => {
   if (!b) return;
   TL.fate = b.getAttribute("data-fate") as typeof TL.fate;
   $("fateChips").querySelectorAll("[data-fate]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  if (fc) fc.events = buildEvents(fc, starName, TL);
+  if (fc) fc.events = withLive(buildEvents(fc, starName, TL));
   appliedDt = NaN; // 미래의 척도 인자가 시나리오마다 다르므로 다시 계산
   time.dt = clamp(time.dt, TL.dtMin, TL.dtMax);
   setText("fateNote", TL.current.text + " (" + TL.current.source + ")");
@@ -1273,7 +1591,8 @@ stage.addEventListener("pointermove", (e) => {
     syncFourUi();
     p.x = e.clientX; p.y = e.clientY;
   } else if (pointers.size === 1) {
-    if (mode === "system") { sys.theta += dx * 0.006; sys.phi = clamp(sys.phi - dy * 0.006, 0.05, Math.PI - 0.05); }
+    if (mode === "impact") { imp.theta -= dx * 0.006; imp.phi = clamp(imp.phi - dy * 0.006, 0.05, Math.PI - 0.05); imp.auto = false; }
+    else if (mode === "system") { sys.theta += dx * 0.006; sys.phi = clamp(sys.phi - dy * 0.006, 0.05, Math.PI - 0.05); }
     else { cam.theta -= dx * 0.006; cam.phi = clamp(cam.phi - dy * 0.006, 0.02, Math.PI - 0.02); }
     p.x = e.clientX; p.y = e.clientY;
   } else if (pointers.size === 2) {
@@ -1289,7 +1608,7 @@ function endPointer(e: PointerEvent): void {
   if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 5 && performance.now() - downAt.t < 450) {
     const r = stage.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
     if (mode === "map") { const s = pick(x, y); select(s); drawScatter(); }
-    else pickBody(x, y);
+    else if (mode === "system") pickBody(x, y);
   }
   downAt = null;
 }
@@ -1318,6 +1637,7 @@ stage.addEventListener("pointercancel", (e) => { pointers.delete(e.pointerId); d
 stage.addEventListener("dblclick", () => { if (selected && mode === "map") flyToSel(selected); });
 stage.addEventListener("wheel", (e) => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.0015)); }, { passive: false });
 function zoom(f: number): void {
+  if (mode === "impact") { imp.r = clamp(imp.r * f, imp.rMin, imp.rMax); return; }
   if (mode === "system") { sys.r = clamp(sys.r * f, sys.rMin, sys.rMax); return; }
   cam.fly = null;
   cam.r = clamp(cam.r * f, 2e-5, 8e10);
@@ -1345,6 +1665,16 @@ $("r4Wk").addEventListener("click", (e) => {
   if (!b) return;
   four.wk = +b.dataset.wk!;
   $("r4Wk").querySelectorAll("[data-wk]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+});
+// 시공간 조건
+$<HTMLInputElement>("c4Expand").addEventListener("change", (e) => {
+  space4.expand = (e.currentTarget as HTMLInputElement).checked;
+  appliedDt = NaN;
+  setText("four4Note", space4.expand ? "팽창을 켰습니다. 은하 사이 거리가 그 시점의 척도 인자 a(t)를 따르고, 빛도 늘어나는 공간을 건너 옵니다." : "팽창을 껐습니다. 은하들이 오늘 거리에 멈춰 있고 빛은 곧은 거리 c·t만 건너 옵니다. 시간 막대를 움직여 차이를 비교해 보세요.");
+});
+$<HTMLInputElement>("c4SeeT").addEventListener("change", (e) => {
+  space4.seeT = (e.currentTarget as HTMLInputElement).checked;
+  setText("four4Note", space4.seeT ? "공간 = 시간을 켰습니다. 멀리 있는 것일수록 빛이 떠난 옛 모습으로 보이고, 입자 지평선 밖은 보이지 않습니다. 별의 죽음도 빛이 도착한 뒤에야 보입니다." : "공간 = 시간을 껐습니다. 모든 천체를 같은 순간(w = 0)에 놓은 3차원 단면입니다. 4차원으로 돌리면 이 단면이 4차원 안에서 기울어집니다.");
 });
 $<HTMLInputElement>("r4Tint").addEventListener("change", (e) => { four.tint = (e.currentTarget as HTMLInputElement).checked; });
 $<HTMLInputElement>("r4Persp").addEventListener("change", (e) => { four.persp = (e.currentTarget as HTMLInputElement).checked; });
@@ -1378,6 +1708,16 @@ function scaleName(r: number): string {
   return "관측 가능한 우주";
 }
 function updateHud(): void {
+  if (mode === "impact") {
+    const I = imp.info, st = I.setup;
+    setText("hudScale", st ? (impScene?.label ?? $("ipTitle").textContent ?? "픽셀 충돌") : "픽셀 충돌");
+    setText("hudSub", st?.still ? "픽셀 " + I.n.toLocaleString("ko-KR") + "개 · " + MODE_NAMES[imp.mode] + " 색" : (I.progress || "경과 " + fmtHours(I.t)) + " · 픽셀 " + I.n.toLocaleString("ko-KR") + "개");
+    const km = imp.r * I.L / 1000;
+    setText("hudTarget", "시야 " + (km < 1e4 ? Math.round(km).toLocaleString("ko-KR") + " km" : (km / 1e3).toPrecision(3) + "천 km"));
+    setText("hudDist", st && impScene?.years !== undefined ? fmtDt(time.dt) : "");
+    setText("hud4", "충돌 장면 · 4차원 회전은 지도·행성계에 적용");
+    return;
+  }
   setText("hud4", hud4Text());
   if (mode === "system") {
     const d = sys.data!;
@@ -1402,8 +1742,13 @@ function frame(nowMs: number): void {
   prev = nowMs; frameNo++;
   advanceTime(dt);
   applyTime();
+  refreshCone();
   update4(dt);
-  if (mode === "system") {
+  if (mode === "impact") {
+    imp.update(dt, W, H, dpr);
+    renderer.setClearColor(0x000000, 1);
+    renderer.render(imp.scene, imp.camera);
+  } else if (mode === "system") {
     applySystemTime();
     sys.set4D(four.M, wMixed(four.ang), four.wk, four.tint);
     sys.update(dt, W, H, cam.auto);
@@ -1427,6 +1772,7 @@ function frame(nowMs: number): void {
 (async () => {
   // 빌드는 상대 경로(base "./")라서, 한 단계 아래(/atlas/)에 있는 이 페이지에서 사이트 뿌리를 계산함
   const base = import.meta.env.BASE_URL, root = base.startsWith("/") ? base : new URL("../", location.href).pathname;
+  const liveP = loadLive(root);
   try {
     data = await loadAtlasData(root, (m) => setText("loading", m));
   } catch (err) {
@@ -1435,11 +1781,16 @@ function frame(nowMs: number): void {
   }
   setText("loading", "지도와 예측 만드는 중…");
   await new Promise((r) => setTimeout(r, 30));
-  buildLightTravel();
+  LIVE = await liveP;
+  mergeExoplanets(LIVE.live.exoplanets.recent ?? []);
   buildLayers();
   buildIndex();
   buildScatter();
   fc = buildForecasts(data, starName, TL);
+  fc.events = withLive(fc.events);
+  renderLive();
+  void liveTick();
+  setInterval(() => void liveTick(), 5 * 60 * 1000);
   $("loading").hidden = true;
   let nVel = 0, nRV = 0;
   for (let i = 0; i < data.stars.n; i++) { const o = STRIDE * i; if (data.stars.buf[o + 5] || data.stars.buf[o + 6] || data.stars.buf[o + 7]) nVel++; if (data.stars.buf[o + 8] >= 16) nRV++; }

@@ -79,8 +79,10 @@ src/
     shaders.ts          GLSL 셰이더 (VAT, 인스턴싱, 정밀 은하, 별·행성)
   atlas/                우주 시뮬레이터: 자료 읽기, 천체 목록, 우리 은하 모형, 행성계 장면, RTE 셰이더,
                         시간축(time), 태양(sun), 영년 섭동(secular), 별(stellar), 국부 은하군(localgroup),
-                        천체 특성(bodies), 미션(mission), 예측·사건(predict), 그래프(charts), 4차원 좌표(four)
-tests/                  계산값이 관측값·문헌값과 맞는지 확인 (54개)
+                        천체 특성(bodies), 미션(mission), 예측·사건(predict), 그래프(charts), 4차원 좌표·광원뿔(four),
+                        원소 구성(composition), 픽셀 충돌(impact·impactview·impactscenes), 실시간 자료(live)
+tests/                  계산값이 관측값·문헌값과 맞는지 확인 (69개)
+scripts/live/           실시간 우주 자료 수집기 (GitHub Actions에서 실행)
 ```
 
 ## 계산 검증 (`npm test`)
@@ -127,6 +129,28 @@ https://ideamax.eu | https://biko.bg | https://github.com/devideamax (MIT + Attr
 | 시점 | 3차원 단면(각 0 = 보통의 지도), 과거 광원뿔(ZW −90°), 시공간 45°, 옆에서 본 4차원 |
 | 보조 | w 축척(빛 = 45°가 기본), w를 색으로(최근의 빛 분홍 → 오래된 빛 청록), w 원근, 화면 왼쪽 아래 X·Y·Z·W 축 |
 | 검증 | 각 0이면 단위 행렬, 회전 직교성, 광원뿔 시점에서 거리 d → 높이 −d, 빛이 온 거리 (`tests/four.test.ts`) |
+
+### 시공간 조건: 팽창 · 공간 = 시간 (지도에 바로 들어 있음)
+
+| 조건 | 계산 | 검증 (`tests/four.test.ts`) |
+|---|---|---|
+| 팽창 | 은하 거리 = 오늘 거리 × a(t), 빛은 χ = ∫ c dt / a 를 건넘 | — |
+| 공간 = 시간 | 관측 시점의 과거 광원뿔: w = −c(t_obs − t_e), 지평선 밖 숨김, 별의 죽음은 빛 도착 뒤 | 입자 지평선 46.2 Gly, z = 1의 빛은 79.5억 년 전 출발 |
+| 광원뿔 쪽으로 돌리기 | ‘같은 순간의 위치’ → ‘빛이 떠날 때의 위치’(× a_e/a) | 눈물방울 최대 약 58억 광년 (z ≈ 1.6), 우주배경복사 4,200만 광년 |
+
+## 원소로 된 픽셀 천체와 충돌 (`src/atlas/composition.ts`, `impact.ts`)
+
+- 천체마다 층 구조와 층별 원소 질량 비율 (지구 전체 철 32.4 · 산소 29.9 · 규소 16.2 · 마그네슘 15.0%, McDonough 2003과 일치).
+- 픽셀(입자) 수천 개를 육방 최밀 쌓기로 채우고, Barnes–Hut 중력 + 스프링–감쇠 접촉력 + 마찰, 잃은 에너지는 열. Web Worker에서 계산.
+- 시나리오: 테이아 충돌(45.1억 년 전), 슈메이커–레비 9 조석 붕괴(1992), 포보스의 고리(2천만~4천만 년 뒤), 트리톤(약 36억 년 뒤), 수성–금성 충돌(확률 약 1%), 직접 고르는 충돌, 천체 단면.
+- 검증 (`tests/impact.test.ts`): 트리 중력 오차 < 2%, 운동량 보존, 에너지 변화 < 3%, 테이아 충돌에서 철이 적은 원반이 생기고 원반의 대부분이 테이아 물질 (보통 해상도에서 달 질량 약 1.9배, 테이아 물질 94%, 철 13.5% 대 행성 36.8%).
+
+## 실시간 우주 자료와 논문 (`scripts/live/`, `src/atlas/live.ts`)
+
+- GitHub Actions(`deploy.yml`)가 6시간마다 `scripts/live/fetch.mjs`로 NOAA SWPC, JPL CAD·Sentry·Horizons, NASA Exoplanet Archive, CelesTrak, arXiv·Crossref를 모아 `data/live.json`으로 함께 배포합니다. 원천 하나가 실패해도 배포는 계속됩니다.
+- 브라우저는 Kp 지수·X선 플레어·위성 궤도를 5분마다 직접 다시 받습니다.
+- 분석: 태양 주기 25를 Hathaway 외 (1994) 함수로 맞춰 극대·다음 극소 예측, 소행성 충돌 에너지·충돌구 (Collins 외 2005), 위성의 지금 위치 (J2 섭동), 행성 위치 모형을 JPL Horizons와 비교, 새로 등록된 외계행성을 지도에 추가.
+- 논문: `public/data/literature.json`은 사람이 확인한 측정값(학술지 게재 = 반영, 프리프린트 = 보류). 자동 수집기는 arXiv 초록에서 값을 뽑아 범위·불확도·학술지 게재·기존 측정과 6σ 이내를 모두 통과할 때만 반영합니다 (`scripts/live/lib.mjs`, `tests/live.test.ts`).
 
 ## 미래 시나리오에 대하여
 

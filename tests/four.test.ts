@@ -1,8 +1,8 @@
-// 우주 지도의 4차원 변환 검사: 각이 0이면 3차원 지도와 같음, 회전은 직교, 광원뿔 시점, 빛이 온 거리.
+// 우주 지도의 4차원 변환 검사: 각이 0이면 3차원 지도와 같음, 회전은 직교, 광원뿔 시점, 팽창하는 우주의 과거 광원뿔.
 import { describe, expect, it } from "vitest";
-import { lightTravelTable, LY_PC, matrix4, PRESETS4, project4, wMixed, XW, YW, ZW } from "../src/atlas/four";
+import { buildLightCone, coneAt, LY_PC, matrix4, PRESETS4, project4, wMixed, XW, YW, ZW } from "../src/atlas/four";
 import { rotate4, type Vec4 } from "../src/fourd/geometry";
-import { createCosmology } from "../src/shared/cosmology";
+import { Timeline, YEAR_S } from "../src/atlas/time";
 
 const DEG = Math.PI / 180;
 
@@ -47,31 +47,43 @@ describe("4차원 회전 행렬", () => {
   });
 });
 
-describe("빛이 온 거리 (w의 크기)", () => {
-  const c = createCosmology(), t0 = c.tOf(0);
-  const lt = lightTravelTable((z) => c.comovingDistance(z), (z) => (t0 - c.tOf(-Math.log10(1 + z))) / 3.15576e7);
+describe("시공간 조건: 관측자의 과거 광원뿔", () => {
+  const TL = new Timeline(), t0 = TL.t0 / YEAR_S, c = TL.core;
+  const today = buildLightCone((d) => TL.la(d), t0, 0, true);
+  const chiOf = (z: number) => c.comovingDistance(z) * 1e6;
 
-  it("1 Mpc 안에서는 거리와 같다", () => {
-    expect(lt(0)).toBe(0);
-    expect(lt(8.2)).toBe(8.2);
-    expect(lt(7.7e5)).toBe(7.7e5);
+  it("입자 지평선 약 462억 광년 (Planck 2018 ΛCDM: 약 46.3 Gly)", () => {
+    const gly = today.horizon / LY_PC / 1e9;
+    expect(gly).toBeGreaterThan(45.5); expect(gly).toBeLessThan(47);
   });
 
-  it("z = 1 은하: 공동 거리 약 3.4 Gpc, 빛이 온 거리 약 7.9 Gyr × c", () => {
-    const dc = c.comovingDistance(1) * 1e6, tl = (t0 - c.tOf(-Math.log10(2))) / 3.15576e7;
-    expect(dc / 1e9).toBeGreaterThan(3.2); expect(dc / 1e9).toBeLessThan(3.6);
-    expect(tl / 1e9).toBeGreaterThan(7.6); expect(tl / 1e9).toBeLessThan(8.2);
-    expect(lt(dc) / (tl * LY_PC)).toBeCloseTo(1, 2);
+  it("z = 1: 빛이 약 79억 년 전에 떠났고, 그때 우주 크기는 1/(1+z) = 0.5", () => {
+    const r = coneAt(today, chiOf(1)), tlb = (TL.t0 - c.tOf(-Math.log10(2))) / YEAR_S;
+    expect(-r.w / LY_PC / tlb).toBeCloseTo(1, 2);
+    expect(r.ratio).toBeCloseTo(0.5, 3);
+    expect(r.ok).toBe(true);
   });
 
-  it("멀어질수록 늘지만 공동 거리보다 짧고, 우주 나이 × c를 넘지 않는다", () => {
-    let prev = 0;
-    for (const d of [2e6, 1e7, 1e8, 1e9, 5e9, 1e10, 1.4e10]) {
-      const v = lt(d);
-      expect(v).toBeGreaterThan(prev);
-      expect(v).toBeLessThan(d);
-      expect(v).toBeLessThan(t0 / 3.15576e7 * LY_PC);
-      prev = v;
-    }
+  it("눈물방울 모양: 빛이 떠날 때의 거리는 z ≈ 1.6에서 최대 약 58억 광년, 우주배경복사는 약 4200만 광년", () => {
+    let best = 0, zBest = 0;
+    for (let z = 0.5; z < 4; z += 0.05) { const r = coneAt(today, chiOf(z)), d = chiOf(z) * r.ratio / LY_PC / 1e9; if (d > best) { best = d; zBest = z; } }
+    expect(best).toBeGreaterThan(5.5); expect(best).toBeLessThan(6.0);
+    expect(zBest).toBeGreaterThan(1.3); expect(zBest).toBeLessThan(1.9);
+    const cmb = coneAt(today, chiOf(1090));
+    expect(chiOf(1090) * cmb.ratio / LY_PC / 1e6).toBeGreaterThan(38);
+    expect(chiOf(1090) * cmb.ratio / LY_PC / 1e6).toBeLessThan(46);
+  });
+
+  it("공간 = 시간: 지평선 밖은 보이지 않고, 과거로 갈수록 지평선이 좁아지며, 먼 미래에는 약 630억 광년에서 멈춘다", () => {
+    expect(coneAt(today, today.horizon * 1.01).ok).toBe(false);
+    const past = buildLightCone((d) => TL.la(d), t0, -1e10, true), far = buildLightCone((d) => TL.la(d), t0, 1e14, true);
+    expect(past.horizon).toBeLessThan(today.horizon * 0.75);
+    expect(far.horizon / LY_PC / 1e9).toBeGreaterThan(61); expect(far.horizon / LY_PC / 1e9).toBeLessThan(65);
+  });
+
+  it("팽창이 없으면 w = −거리, 배율 1, 지평선 = c × 우주 나이", () => {
+    const st = buildLightCone((d) => TL.la(d), t0, 0, false), r = coneAt(st, 1e9);
+    expect(r.w).toBeCloseTo(-1e9, 3); expect(r.ratio).toBe(1);
+    expect(st.horizon / LY_PC / t0).toBeCloseTo(1, 6);
   });
 });

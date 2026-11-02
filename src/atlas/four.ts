@@ -37,27 +37,6 @@ export function project4(M: readonly number[], x: number, y: number, z: number, 
   return [vx * k, vy * k, vz * k];
 }
 
-/**
- * 공동 거리 [pc] → 빛이 온 거리 c·t_lookback [pc]. 가까운 우주(1 Mpc 안)에서는 둘이 같다.
- * dcMpc(z): 공동 거리 [Mpc], lookbackYears(z): 되돌아본 시간 [년].
- */
-export function lightTravelTable(dcMpc: (z: number) => number, lookbackYears: (z: number) => number): (d: number) => number {
-  const dc: number[] = [], dl: number[] = [];
-  for (let i = 0; i <= 240; i++) {
-    const z = Math.pow(10, -4 + i * 8 / 240) - 1e-4;
-    dc.push(dcMpc(z) * 1e6);
-    dl.push(lookbackYears(z) * LY_PC);
-  }
-  const n = dc.length;
-  return (d: number) => {
-    if (d < 1e6) return d;
-    if (d >= dc[n - 1]) return dl[n - 1];
-    let lo = 0, hi = n - 1;
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (dc[m] <= d) lo = m; else hi = m; }
-    return dl[lo] + (dl[hi] - dl[lo]) * (d - dc[lo]) / (dc[hi] - dc[lo]);
-  };
-}
-
 /** 미리 정한 시점 (도) */
 export const PRESETS4: Record<string, { XW: number; YW: number; ZW: number; label: string; text: string }> = {
   "3d": { XW: 0, YW: 0, ZW: 0, label: "3차원 단면", text: "w 축이 화면에 수직이라 보이지 않습니다. 보통의 3차원 지도와 같습니다." },
@@ -65,3 +44,67 @@ export const PRESETS4: Record<string, { XW: number; YW: number; ZW: number; labe
   tilt: { XW: 0, YW: 0, ZW: -45, label: "시공간 45°", text: "z와 w를 반씩 섞었습니다. 공간 구조와 빛의 나이가 함께 보입니다." },
   side: { XW: -60, YW: 0, ZW: -30, label: "옆에서 본 4차원", text: "x와 z가 모두 w와 섞여, 3차원 단면이 4차원 안에서 비스듬히 놓인 모습입니다." },
 };
+
+// ---------- 시공간 조건: 팽창 · 공간 = 시간 ----------
+/**
+ * 관측자(태양)의 과거 광원뿔. 관측 시각 t_obs에서 거꾸로 빛을 따라가며
+ *   공동 거리 χ(t_e) = ∫_{t_e}^{t_obs} c dt / a(t)   (a는 오늘 = 1, χ는 지도에 저장된 오늘 기준 거리 [pc])
+ * 를 적분한다. 그러면 오늘 기준 거리 χ인 천체에 대해
+ *   w = −c (t_obs − t_e)            그 빛이 떠난 때 × c (공간 = 시간)
+ *   a(t_e)/a(t_obs)                 빛이 떠날 때 그 천체가 지금보다 얼마나 가까웠나 (팽창)
+ *   χ > 입자 지평선이면 아직 빛이 오지 않아 보이지 않음.
+ * 팽창이 없으면(expand = false) χ = c·Δt, 배율 1, 지평선 = c × 우주 나이.
+ */
+export interface LightCone {
+  /** 관측 시각: 빅뱅 뒤 [년] */
+  age: number;
+  expand: boolean;
+  /** 입자 지평선 (오늘 기준 거리) [pc] */
+  horizon: number;
+  /** 오름차순 χ [pc], 그때까지 거슬러 간 시간 × c [pc], log10 (a_e / a_obs) */
+  chi: Float64Array; look: Float64Array; lr: Float64Array;
+}
+
+export function buildLightCone(laAtDt: (dtYears: number) => number, t0Years: number, obsDt: number, expand: boolean): LightCone {
+  const age = Math.max(t0Years + obsDt, 1e-9);
+  if (!expand) {
+    const chi = new Float64Array([0, age * LY_PC]);
+    return { age, expand, horizon: age * LY_PC, chi, look: chi.slice(), lr: new Float64Array(2) };
+  }
+  // 거슬러 간 시간 L: 작은 쪽(가까운 은하)과 빅뱅 쪽을 모두 촘촘히 (두 로그 격자를 합침)
+  const tMin = Math.min(1, age * 1e-6), Ls: number[] = [0];
+  const NL = 320;
+  for (let i = 0; i < NL; i++) {
+    Ls.push(Math.pow(10, Math.log10(Math.max(age * 1e-9, 1e-6)) + (Math.log10(age - tMin) - Math.log10(Math.max(age * 1e-9, 1e-6))) * i / (NL - 1)));
+    Ls.push(age - Math.pow(10, Math.log10(tMin) + (Math.log10(age * 0.5) - Math.log10(tMin)) * i / (NL - 1)));
+  }
+  Ls.sort((a, b) => a - b);
+  const L: number[] = [];
+  for (const x of Ls) if (x >= 0 && x <= age - tMin && (!L.length || x > L[L.length - 1] * (1 + 1e-12))) L.push(x);
+  const n = L.length, laObs = laAtDt(obsDt);
+  const chi = new Float64Array(n + 1), look = new Float64Array(n + 1), lr = new Float64Array(n + 1);
+  let prevF = Math.pow(10, -laObs), s = 0;
+  lr[0] = 0;
+  for (let i = 1; i < n; i++) {
+    const la = laAtDt(obsDt - L[i]), f = Math.pow(10, -la);
+    s += 0.5 * (prevF + f) * (L[i] - L[i - 1]) * LY_PC;
+    chi[i] = s; look[i] = L[i] * LY_PC; lr[i] = la - laObs;
+    prevF = f;
+  }
+  // 빅뱅 직후 [0, tMin]: 복사 시대 a ∝ t^½ → ∫dt/a = 2 t / a(t)
+  const laMin = laAtDt(obsDt - L[n - 1]);
+  s += 2 * (age - L[n - 1]) * Math.pow(10, -laMin) * LY_PC;
+  chi[n] = s; look[n] = age * LY_PC; lr[n] = -40;
+  return { age, expand, horizon: s, chi, look, lr };
+}
+
+/** 오늘 기준 거리 χ [pc]인 천체: w [pc, 음수], a_e/a_obs, 보이는가 */
+export function coneAt(c: LightCone, chi: number): { w: number; ratio: number; ok: boolean } {
+  if (chi <= 0) return { w: 0, ratio: 1, ok: true };
+  if (chi >= c.horizon) return { w: -c.look[c.look.length - 1], ratio: 0, ok: false };
+  const a = c.chi;
+  let lo = 0, hi = a.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (a[m] <= chi) lo = m; else hi = m; }
+  const f = (chi - a[lo]) / (a[hi] - a[lo] || 1);
+  return { w: -(c.look[lo] + (c.look[hi] - c.look[lo]) * f), ratio: Math.pow(10, c.lr[lo] + (c.lr[hi] - c.lr[lo]) * f), ok: true };
+}

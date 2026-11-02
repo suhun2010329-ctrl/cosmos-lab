@@ -7,6 +7,7 @@ import { closeEncounters, nearestAt, STRIDE, type Encounter } from "./stellar";
 import { dayLength, earthAt, eclipseEndYears, solarSystemEvents, type TimedEvent } from "./sun";
 import { FAR_FUTURE } from "./bodies";
 import { Timeline, YEAR_S } from "./time";
+import { SCENES } from "./impactscenes";
 
 export interface Forecasts {
   secular: Secular;
@@ -89,13 +90,15 @@ export function buildEvents(f: Forecasts, starName: (i: number) => string, TL: T
   }
   ev.push(
     { years: -4.567e9, label: "태양과 원시 행성계 원반 탄생", detail: "운석 속 가장 오래된 광물(CAI)의 나이.", scale: "solar" },
-    { years: -4.51e9, label: "달 탄생 (거대 충돌)", detail: "화성만 한 천체 테이아가 원시 지구와 부딪쳐 생긴 파편이 모였다고 봅니다.", scale: "moon" },
+    { years: -4.51e9, label: "달 탄생 (거대 충돌)", detail: "화성만 한 천체 테이아가 원시 지구와 부딪쳐 생긴 파편이 모였다고 봅니다.", scale: "moon", impact: "theia" },
     { years: -3.7e9, label: "지구 생명의 흔적", detail: "그린란드 암석의 스트로마톨라이트형 구조 (논쟁 중), 확실한 화석은 약 35억 년 전.", scale: "earth" },
     { years: -2.4e9, label: "대산화 사건", detail: "광합성 미생물이 대기에 산소를 쌓기 시작합니다.", scale: "earth" },
     { years: -5.38e8, label: "캄브리아기 대폭발", detail: "복잡한 동물이 짧은 기간에 다양해집니다.", scale: "earth" },
     { years: -6.6e7, label: "공룡 대멸종", detail: "칙술루브 소행성 충돌.", scale: "earth" },
     { years: -3.0e5, label: "현생 인류 등장", detail: "모로코 제벨 이르후드 화석.", scale: "earth" },
   );
+  // 픽셀 충돌 장면이 있는 사건 (테이아는 위의 ‘달 탄생’에 붙임)
+  for (const sc of SCENES) if (sc.years !== undefined && sc.key !== "theia") ev.push({ years: sc.years, label: sc.label, detail: sc.text + " (" + sc.src + ")", scale: sc.key === "mercvenus" ? "solar" : "moon", impact: sc.key });
   ev.sort((x, y) => x.years - y.years);
   return ev;
 }

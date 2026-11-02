@@ -40,6 +40,12 @@
           <span class="ftitle">4차원</span>
           <span class="fdef" id="four4Def">지도의 모든 점은 (x, y, z, <b>w</b>)입니다. <b>w</b> = 그 천체에서 지금 보이는 빛이 떠난 때 × 빛의 속도</span>
         </div>
+        <div class="frow cond4">
+          <span class="lbl">시공간 조건</span>
+          <label class="chk"><input type="checkbox" id="c4Expand" checked> <b>팽창</b> (은하 사이 공간이 a(t)만큼 늘어남)</label>
+          <label class="chk"><input type="checkbox" id="c4SeeT" checked> <b>공간 = 시간</b> (멀리 볼수록 더 먼 과거가 보임)</label>
+          <span class="cinfo" id="c4Info"></span>
+        </div>
         <div class="frow">
           <div class="group">
             <span class="lbl">시점</span>
@@ -123,6 +129,27 @@
         </div>
         <button class="chip" type="button" id="autoBtn" aria-pressed="false">자동 회전</button>
       </div>
+      <div class="controls" id="impControls" hidden>
+        <button class="btn" type="button" id="impBack">돌아가기</button>
+        <button class="btn primary" type="button" id="impPlay">일시정지</button>
+        <div class="group" id="impMode"><span class="lbl">색</span>
+          <button class="chip" type="button" data-cm="0" aria-pressed="true">물질 (층)</button>
+          <button class="chip" type="button" data-cm="1" aria-pressed="false">원소</button>
+          <button class="chip" type="button" data-cm="2" aria-pressed="false">온도</button>
+          <button class="chip" type="button" data-cm="3" aria-pressed="false">어느 천체에서 왔나</button>
+        </div>
+        <button class="chip" type="button" id="impCut" aria-pressed="false">단면 (앞쪽 절반 걷기)</button>
+        <div class="group" id="impFollow"><span class="lbl">중심</span>
+          <button class="chip" type="button" data-fl="-1" aria-pressed="true">질량 중심</button>
+          <button class="chip" type="button" data-fl="0" aria-pressed="false">첫 천체</button>
+          <button class="chip" type="button" data-fl="-2" aria-pressed="false" hidden>행성</button>
+        </div>
+        <div class="group" id="impQ"><span class="lbl">픽셀 수</span>
+          <button class="chip" type="button" data-q="0" aria-pressed="true">보통</button>
+          <button class="chip" type="button" data-q="1" aria-pressed="false">자세히</button>
+          <button class="chip" type="button" data-q="2" aria-pressed="false">아주 자세히</button>
+        </div>
+      </div>
       <div class="controls" id="sysControls" hidden>
         <button class="btn" type="button" id="sysBack">지도로 돌아가기</button>
         <span class="note">시간 막대가 행성계에도 그대로 적용됩니다. 행성·위성을 누르면 자세한 특성이 나옵니다.</span>
@@ -164,6 +191,7 @@
         <div class="row">
           <button class="btn primary" type="button" id="flyBtn">여기로 날아가기</button>
           <button class="btn" type="button" id="icSystem" hidden>행성계 보기</button>
+          <button class="btn" type="button" id="icPixel" hidden>픽셀로 쌓아 속 보기</button>
         </div>
       </section>
       <section class="card" id="sysCard" hidden>
@@ -183,10 +211,49 @@
           <p class="note credit">궤도 전이 공식·발사체 자료: Space Engineering Pack — Original work by IDEAMAX Skills Factory, Creator: Dimitar Georgiev - Biko (<a href="https://ideamax.eu">ideamax.eu</a> · <a href="https://biko.bg">biko.bg</a> · <a href="https://github.com/devideamax">github.com/devideamax</a>), MIT + Attribution.</p>
         </div>
       </section>
+      <section class="live" id="liveBox">
+        <h2>실시간 우주 정보 · 변인 분석</h2>
+        <p class="note" id="lvStamp">불러오는 중…</p>
+        <dl class="readouts" id="lvRows"></dl>
+        <details class="papers">
+          <summary id="lvPaperSum">논문에서 온 변인</summary>
+          <div id="lvPapers"></div>
+        </details>
+        <details class="papers">
+          <summary>수집 원천과 검증 규칙</summary>
+          <div id="lvSources"></div>
+          <p class="note">자동 수집기는 몇 시간마다 arXiv 새 논문 초록에서 측정값(예: 허블 상수)을 뽑아, ① 값과 불확도가 함께 있고 ② 물리적으로 가능한 범위 안이며 ③ 학술지 게재가 확인되고(arXiv 정보 또는 Crossref 제목 대조) ④ 이미 검증된 측정들과 6σ 넘게 어긋나지 않을 때만 자료로 넣습니다. 하나라도 걸리면 ‘보류’로 이유와 함께 보여 주기만 합니다.</p>
+        </details>
+      </section>
+      <section class="card" id="impCard" hidden>
+        <h2>픽셀 충돌 시뮬레이션</h2>
+        <h3 id="ipTitle"></h3>
+        <p class="sub" id="ipWhen"></p>
+        <dl class="readouts" id="ipRows"></dl>
+        <div class="legend" id="ipLegend"></div>
+        <p class="note" id="ipText"></p>
+        <p class="note src" id="ipSrc"></p>
+      </section>
+      <section id="impLab">
+        <h2>픽셀 충돌 실험</h2>
+        <p class="note">행성·위성을 실제 층 구조와 원소로 된 픽셀 수천 개로 쌓고, 중력과 접촉력으로 부딪치게 합니다. 부서진 픽셀이 어디로 가는지, 무슨 원소가 원반·고리로 가는지 분석합니다.</p>
+        <div class="chips" id="impScenes"></div>
+        <details class="custom">
+          <summary>두 천체를 골라 부딪치기</summary>
+          <div class="cform">
+            <label>천체 1 <select id="cuA"></select></label>
+            <label>천체 2 <select id="cuB"></select></label>
+            <label>충돌 속력 <input type="range" id="cuV" min="0" max="40" step="0.5" value="0"><output id="cuVo">탈출 속도</output></label>
+            <label>충돌 각도 <input type="range" id="cuAng" min="0" max="80" step="5" value="45"><output id="cuAngO">45°</output></label>
+            <button class="btn primary" type="button" id="cuGo">부딪치기</button>
+          </div>
+        </details>
+      </section>
       <section>
         <h2>다가오는 사건 · 지나간 사건</h2>
         <ol class="events" id="events"></ol>
         <p class="note" id="evDetail">사건을 누르면 그 시점으로 가고 설명이 여기에 나옵니다.</p>
+        <div class="row"><button class="btn" type="button" id="evImpact" hidden>이 충돌을 픽셀로 보기</button></div>
       </section>
       <section>
         <h2>보이는 것</h2>
@@ -224,6 +291,18 @@
       <p>지도의 모든 점에 네 번째 좌표 <b>w</b>를 줍니다. w는 그 천체에서 지금 우리 눈에 닿은 빛이 출발한 때 × 빛의 속도로, 우리가 보는 우주가 ‘과거 광원뿔’ 위에 있다는 사실을 좌표로 쓴 것입니다(1 Mpc보다 먼 은하는 공동 거리가 아니라 빛이 실제로 온 거리 c·t를 씁니다). 4차원 관측실과 같은 여섯 평면 회전으로 XW·YW·ZW 평면을 돌리면 w 축이 화면에 섞여 들어옵니다. ZW를 −90°로 돌리면 세로축이 시간이 되어 관측 가능한 우주가 원뿔로 보입니다. 행성계 장면에서는 w가 시간이라서, 행성들이 태양의 곧은 세계선을 감는 나선(세계선)으로 그려집니다. 시간 막대·예측·고르기·이름표는 4차원 회전 중에도 그대로 작동합니다.</p>
     </div>
     <div>
+      <h3>팽창과 ‘공간 = 시간’ 조건</h3>
+      <p>4차원 칸의 <b>팽창</b>을 켜면 은하 사이 거리가 그 시점의 척도 인자 a(t)를 따르고, 빛도 늘어나는 공간을 건너 옵니다. <b>공간 = 시간</b>을 켜면 관측 시점의 과거 광원뿔을 χ = ∫c dt/a로 적분해, 멀리 있는 것일수록 빛이 떠난 옛 모습만 보이게 합니다: 입자 지평선(오늘 462억 광년) 밖은 보이지 않고, 첫 은하 이전의 빛에는 은하가 없으며, 별의 죽음도 빛이 도착한 뒤에야 보입니다. 공간을 w 쪽으로 돌릴수록 ‘같은 순간의 위치’에서 ‘빛이 떠날 때의 위치’로 옮겨 가, 과거 광원뿔이 눈물방울 모양(빛이 떠날 때 가장 멀었던 거리 약 58억 광년, 우주배경복사는 4,200만 광년)으로 드러납니다.</p>
+    </div>
+    <div>
+      <h3>원소로 된 픽셀 천체와 충돌</h3>
+      <p>행성·위성·별을 실제 층 구조(핵·맨틀·지각·바다·얼음·기체 외피)와 층마다 원소 질량 비율로 만들었습니다(지구 전체: 철 32%, 산소 30%, 규소 16%, 마그네슘 15%). 충돌 실험에서는 천체를 픽셀 수천 개로 쌓고, 픽셀마다 원소를 줍니다. 중력(Barnes–Hut 트리)과 접촉력으로 부딪치면 픽셀이 부서져 흩어지고, 잃은 운동 에너지는 열이 됩니다. 테이아 충돌은 달 질량 약 2배의 원반이 생기고, 원반에 철이 적으며, 대부분 테이아 물질이라는 표준 결과(Canup 2004)를 다시 얻습니다.</p>
+    </div>
+    <div>
+      <h3>실시간 자료와 논문</h3>
+      <p>GitHub Actions가 6시간마다 NOAA(태양 활동), NASA JPL(근접 소행성·충돌 위험·행성 위치), NASA 외계행성 기록, CelesTrak(인공위성), arXiv·Crossref(새 논문)에서 자료를 모아 함께 배포하고, 브라우저는 Kp 지수·플레어·위성 궤도를 몇 분마다 직접 다시 받습니다. 받은 값은 태양 주기 맞춤, 소행성 충돌 에너지, 위성 위치, 행성 위치 모형 검증(JPL Horizons와의 차이), 허블 상수 종합에 바로 씁니다. 논문 값은 범위·불확도·학술지 게재·기존 측정과의 일치를 모두 통과해야 자료로 들어갑니다.</p>
+    </div>
+    <div>
       <h3>무엇이 실제이고 무엇이 모형인가</h3>
       <p>별의 위치·밝기·색·속도, 외계행성의 궤도, 은하의 위치·크기·기울기, 행성·위성의 물리량은 관측값입니다. 우리 은하의 나선팔, 국부 은하군 궤도의 질량 분포, 은하 판의 무늬, 외계행성계의 궤도 방향은 모형이나 보기 위한 그림입니다.</p>
     </div>
@@ -241,6 +320,8 @@
       <li>Bailer-Jones 외 (2018), A&amp;A 616, A37 (별의 근접 통과) · Joyce 외 (2020), ApJ 902, 63 (베텔게우스).</li>
       <li>Kopparapu 외 (2013), ApJ 765, 131 · Chen & Kipping (2017), ApJ 834, 17 · Fulton 외 (2017), AJ 154, 109.</li>
       <li>Adams & Laughlin (1997), Rev. Mod. Phys. 69, 337 · Loeb (2002), PRD 65, 047301 · Hawking (1975).</li>
+      <li>Canup & Asphaug (2001), Nature 412, 708 · Canup (2004), Icarus 168, 433 · Asphaug & Benz (1994), Nature 370, 120 · Black & Mittal (2015), Nature Geoscience 8, 913 · Laskar & Gastineau (2009), Nature 459, 817 · McDonough & Sun (1995), Chem. Geol. 120, 223 · Asplund 외 (2021), A&A 653, A141 · Davis & Lineweaver (2004), PASA 21, 97 (광원뿔과 지평선).</li>
+      <li>DESI DR2 (2025), arXiv:2503.14738 · Riess 외 (2022), ApJL 934, L7 · Freedman 외 (2025), ApJ 985, 203 · JWST의 2024 YR4 관측 (2026), RNAAS · Hathaway, Wilson & Reichmann (1994), Solar Physics 151, 177 · Collins, Melosh & Marcus (2005), MAPS 40, 817. 실시간 원천: NOAA SWPC, NASA JPL SSD (CAD·Sentry·Horizons), NASA Exoplanet Archive, CelesTrak, arXiv, Crossref.</li>
       <li>Minkowski (1908), „Raum und Zeit“ (시공간 4차원과 광원뿔) · Hogg (1999), arXiv:astro-ph/9905116 (공동 거리와 빛이 온 거리).</li>
       <li>Luu, Qiu & Tye (2025), JCAP · Caldwell, Kamionkowski & Weinberg (2003), PRL 91, 071301 · DESI (2025) · Planck Collaboration (2020), A&amp;A 641, A6.</li>
       <li>NASA 행성 자료표 (Williams, NSSDCA) · Event Horizon Telescope (2019, 2022) · El-Badry 외 (2023), MNRAS 518, 1057 · Gaia Collaboration (2024).</li>

@@ -12,7 +12,11 @@ uniform float uWTgt;    // 회전 중심의 w
 uniform float uP4;      // 4차원 원근 (0 = 정사영)
 uniform float uL;       // 원근 기준 길이
 uniform float uTint;    // w를 색으로
-vec3 rteT(vec3 hi, vec3 lo) { return (hi - uTgtHi) + (lo - uTgtLo); }
+// ---- 시공간 조건 ----
+uniform float uSeeT;    // 공간 = 시간: 1이면 멀리 볼수록 과거 (빛이 오는 데 걸린 시간만큼 늦게 보임), 0이면 모두 같은 순간(w = 0)
+uniform float uMix;     // 공간을 w 쪽으로 돌린 정도 (0 = 같은 순간의 단면, 1 = 광원뿔): 빛이 떠날 때 위치로 옮기는 비율
+uniform vec3 uTgtShift; // 회전 중심이 그렇게 옮겨 간 양 [pc]
+vec3 rteT(vec3 hi, vec3 lo) { return (hi - uTgtHi) + (lo - uTgtLo) - uTgtShift; }
 float log10f(float x) { return log(x) * 0.4342944819; }
 // 목표 기준 3차원 위치 p와 w → 4차원 회전 → 투영 → 카메라 기준 위치. wr에 회전 뒤 w를 돌려줌
 vec3 to4(vec3 p, float w, out float wr) {
@@ -36,9 +40,11 @@ uniform float uDt; uniform float uAge; uniform float uLocal; uniform float uSunM
 varying vec3 vCol; varying float vA;
 void main() {
   // 직선 운동 (고유 운동 + 시선 속도): 위치 + 속도 × Δt.  w = −(태양까지 거리): 그 빛이 떠난 때
-  vec3 move = aVel * uDt, sunPos = aHi + aLo + move;
+  // 공간 = 시간: 빛이 오는 데 걸린 시간(lag)만큼 옛 모습 (위치도, 살아 있는지도)
+  float lag = uSeeT * length(aHi + aLo) / 0.306601;
+  vec3 move = aVel * (uDt - lag), sunPos = aHi + aLo + move;
   float wr;
-  vec3 rel = to4(rteT(aHi, aLo) + move, -length(sunPos), wr);
+  vec3 rel = to4(rteT(aHi, aLo) + move, -uSeeT * length(sunPos), wr);
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = max(length(rel), 1e-7);
@@ -46,10 +52,10 @@ void main() {
   float m = M + 5.0 * log10f(d / 10.0);
   float f = pow(10.0, -0.4 * (m - uMLim));
   // 살아 있을 확률 (나이를 모르므로 남은 수명 범위에 고르게 퍼져 있다고 봄)
-  float alive = aSun > 0.5 ? step(M, 40.0) : clamp(1.0 - max(uAge, 0.0) / aLife, 0.0, 1.0) * uLocal;
+  float alive = aSun > 0.5 ? step(M, 40.0) : clamp(1.0 - max(uAge - lag, 0.0) / aLife, 0.0, 1.0) * uLocal;
   vA = clamp(f, 0.0, 1.0) * uFade * alive;
   gl_PointSize = (vA > 0.008 && mv.z < 0.0) ? uPx * clamp(1.0 + 1.3 * log(1.0 + f), 1.0, 10.0) : 0.0;
-  vCol = wTint(aSun > 0.5 ? uSunCol : aCol, -length(sunPos));
+  vCol = wTint(aSun > 0.5 ? uSunCol : aCol, -uSeeT * length(sunPos));
 }`;
 export const STAR_FS = `
 varying vec3 vCol; varying float vA;
@@ -67,9 +73,10 @@ uniform float uRange; uniform float uPx; uniform float uFade; uniform float uSel
 attribute float aIdx;
 varying float vA; varying float vSel;
 void main() {
-  vec3 move = aVel * uDt;
+  float lag = uSeeT * length(aHi + aLo) / 0.306601;
+  vec3 move = aVel * (uDt - lag);
   float wr;
-  vec3 rel = to4(rteT(aHi, aLo) + move, -length(aHi + aLo + move), wr);
+  vec3 rel = to4(rteT(aHi, aLo) + move, -uSeeT * length(aHi + aLo + move), wr);
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = length(rel);
@@ -95,15 +102,23 @@ uniform float uMLim; uniform float uScale; uniform vec2 uRes; uniform float uFad
 // 시간: 우주 팽창 배율 uA (= a(t)/a₀), 그룹별 이동 (M31 무리, 마젤란 은하, 은하 중심을 도는 위성), 밀코메다 출현 정도
 uniform float uA; uniform vec3 uM31Off; uniform vec3 uLMCOff; uniform vec3 uGcOff; uniform float uMilk; uniform float uLmcGone;
 attribute float gIdx; attribute float gGroup;
-// w: 그 은하의 빛이 떠난 때 × c [pc] (빛이 온 거리, 음수)
-attribute float gW;
+// w: 그 은하의 빛이 떠난 때 × c [pc] (빛이 온 거리, 음수). gS: 빛이 떠날 때 척도 인자 / 지금 척도 인자 (음수면 아직 빛이 오지 않음)
+attribute float gW; attribute float gS;
 varying vec2 vUV; varying float vType; varying float vSeed; varying float vA; varying float vPoint; varying float vSel; varying vec3 vTint;
 void main() {
   vUV = position.xy; vType = gP.x; vSeed = gP.y; vPoint = 0.0;
   vSel = abs(gIdx - uSelIdx) < 0.5 ? 1.0 : 0.0;
   vec3 c;
   float grpA = 1.0, dim = 0.0;
-  if (gGroup < 0.5) { c = (gHi * uA - uTgtHi) + (gLo * uA - uTgtLo) + uGcOff; dim = uA > 1.0 ? 10.0 * log10f(uA) : 0.0; }
+  if (gGroup < 0.5) {
+    if (gS < 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
+    // 팽창: 그 시점의 거리 = 오늘 거리 × a(t). 광원뿔 쪽으로 돌리면 빛이 떠날 때의 거리(× a_e/a)로 옮겨 감
+    float S = mix(1.0, gS, uMix);
+    c = (gHi * uA - uTgtHi) + (gLo * uA - uTgtLo) - uTgtShift + (gHi + gLo) * (uA * (S - 1.0)) + uGcOff;
+    dim = uA > 1.0 ? 10.0 * log10f(uA) : 0.0;
+    // 공간 = 시간: 빛이 떠난 때가 첫 은하들 이전(z > 12)이면 아직 은하가 없음
+    grpA *= mix(1.0, smoothstep(1.0 / 13.0, 1.0 / 5.0, gS * uA), uSeeT);
+  }
   else if (gGroup < 1.5) c = rteT(gHi, gLo) + uGcOff;
   else if (gGroup < 2.5) { c = rteT(gHi, gLo) + uM31Off; grpA = 1.0 - uMilk; }
   else if (gGroup < 3.5) { c = rteT(gHi, gLo) + uLMCOff; grpA = 1.0 - uLmcGone; }
@@ -194,14 +209,14 @@ void main() {
   vec3 local = vec3(cs * position.x - sn * position.y, sn * position.x + cs * position.y, position.z);
   vec3 sunPos = local + uOrigin;
   float wr;
-  vec3 rel = to4(sunPos - (uTgtHi + uTgtLo), -length(sunPos), wr);
+  vec3 rel = to4(sunPos - (uTgtHi + uTgtLo) - uTgtShift, -uSeeT * length(sunPos), wr);
   vec4 mv = viewMatrix * vec4(rel, 1.0);
   gl_Position = projectionMatrix * mv;
   float d = max(1e-6, -mv.z);
   // 카메라 가까이의 점은 크기를 9 px로 묶고 그만큼 흐리게 (화소 계산량을 묶어 둠)
   float want = aSize * uScale / d, sz = clamp(want, uMinPx, 9.0);
   gl_PointSize = (mv.z < 0.0 && uFade > 0.0) ? sz : 0.0;
-  vC = vec4(wTint(aCol.rgb, -length(sunPos)), aCol.a * uFade * min(1.0, sz / max(want, 1e-6) * 1.5));
+  vC = vec4(wTint(aCol.rgb, -uSeeT * length(sunPos)), aCol.a * uFade * min(1.0, sz / max(want, 1e-6) * 1.5));
 }`;
 export const MW_FS = `
 varying vec4 vC;
@@ -215,9 +230,10 @@ void main() {
 export const SHELL_VS = RTE + `
 uniform float uK;      // 그 시점의 척도 인자 배율
 uniform float uShellW; // 그 경계의 빛이 떠난 때 × c [pc]
+uniform float uShellS; // 빛이 떠날 때 척도 인자 / 지금
 void main() {
   float wr;
-  vec3 rel = to4(position * uK - (uTgtHi + uTgtLo), uShellW, wr);
+  vec3 rel = to4(position * (uK * mix(1.0, uShellS, uMix)) - (uTgtHi + uTgtLo) - uTgtShift, uShellW, wr);
   gl_Position = projectionMatrix * viewMatrix * vec4(rel, 1.0);
 }`;
 export const SHELL_FS = `

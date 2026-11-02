@@ -37,7 +37,7 @@ export const FACTS: Record<string, BodyFacts> = {
   엔켈라두스: { mass: 0.000108, radius: 252.1, density: 1609, gravity: 0.11, escape: 0.24, rotation: 32.9, tilt: 0, temp: -198, pressure: null, atmosphere: "물기둥에서 나온 수증기", magnetic: "없음", moons: 0, rings: "", features: "남극 틈에서 바닷물이 우주로 뿜어져 토성 E 고리를 만듦." },
   트리톤: { mass: 0.0214, radius: 1353.4, density: 2061, gravity: 0.78, escape: 1.46, rotation: -141.0, tilt: 0, temp: -235, pressure: 0.000014, atmosphere: "엷은 질소", magnetic: "없음", moons: 0, rings: "", features: "역행 공전 — 카이퍼대에서 붙잡힌 천체. 질소 간헐천." },
   카론: { mass: 0.00159, radius: 606, density: 1702, gravity: 0.29, escape: 0.59, rotation: 153.3, tilt: 0, temp: -220, pressure: null, atmosphere: "없음", magnetic: "없음", moons: 0, rings: "", features: "명왕성 지름의 절반. 둘 다 서로를 향해 고정된 이중 천체." },
-  포보스: { mass: 1.07e-8, radius: 11.27, density: 1876, gravity: 0.0057, escape: 0.011, rotation: 7.65, tilt: 0, temp: -40, pressure: null, atmosphere: "없음", magnetic: "없음", moons: 0, rings: "", features: "100년에 1.8 m씩 화성에 다가감. 3천만~5천만 년 뒤 부서질 운명." },
+  포보스: { mass: 1.07e-8, radius: 11.27, density: 1876, gravity: 0.0057, escape: 0.011, rotation: 7.65, tilt: 0, temp: -40, pressure: null, atmosphere: "없음", magnetic: "없음", moons: 0, rings: "", features: "100년에 1.8 m씩 화성에 다가감. 2천만~4천만 년 뒤 조석에 부서져 고리가 될 것으로 예측 (Black & Mittal 2015)." },
 };
 
 // ---------- 블랙홀 ----------

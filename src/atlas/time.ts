@@ -8,8 +8,13 @@ import { buildFates, type Fate, type FateKey } from "../shared/scenarios";
 import { laZ } from "../shared/math";
 
 export const YEAR_S = 3.15576e7;
-/** 지금의 서기 연도 (2026년 10월 말) */
-export const NOW_YEAR = 2026.83;
+/** 날짜 → 소수점 서기 연도 */
+export function decimalYear(d: Date): number {
+  const y = d.getUTCFullYear(), a = Date.UTC(y, 0, 1), b = Date.UTC(y + 1, 0, 1);
+  return y + (d.getTime() - a) / (b - a);
+}
+/** 지금의 서기 연도 (페이지를 연 순간) */
+export const NOW_YEAR = decimalYear(new Date());
 
 export class Timeline {
   readonly core: Cosmology;
@@ -93,7 +98,7 @@ export function fmtDt(dt: number): string {
   const a = Math.abs(dt), dir = dt >= 0 ? " 뒤" : " 전";
   if (a < 0.5 / 365.25) return "지금 (" + Math.floor(NOW_YEAR) + "년)";
   if (a < 3) {
-    const y = NOW_YEAR + dt, yi = Math.floor(y), d = new Date(Date.UTC(yi, 0, 1) + (y - yi) * 365.25 * 86400000);
+    const y = NOW_YEAR + dt, yi = Math.floor(y), d = new Date(Date.UTC(yi, 0, 1) + (y - yi) * (Date.UTC(yi + 1, 0, 1) - Date.UTC(yi, 0, 1)));
     return yi + "년 " + (d.getUTCMonth() + 1) + "월 " + d.getUTCDate() + "일 (" + (a < 1 ? Math.round(a * 365.25) + "일" : a.toFixed(1) + "년") + dir + ")";
   }
   if (a < 10000) {

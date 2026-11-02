@@ -99,6 +99,7 @@ export function exoSystem(s: PlanetSystem): SysData {
 }
 
 interface Live { mesh: THREE.Mesh; p: SysPlanet; base: SysPlanet; orbit: THREE.Line; orbOp: number; raw: THREE.Vector3; label: HTMLDivElement; gone: boolean; moons: { mesh: THREE.Mesh; dist: number; P: number; phase: number; label: HTMLDivElement; name: string }[] }
+interface SatItem { ring: THREE.LineLoop; dot: THREE.Mesh; r: number; P: number; tilt: number; ph: number; t0: number; label: HTMLDivElement }
 interface WorldLine { line: THREE.Line; pos: Float32Array; col: Float32Array; l: Live | null }
 const WL_MAX = 1537;
 export interface SysTime { secular?: { e: number[]; peri: number[]; i: number[]; node: number[] }; sun?: SunState; moonScale?: number; earthGone?: boolean; starDead?: boolean }
@@ -324,16 +325,20 @@ export class SystemView {
     this.moonScale = t.moonScale ?? 1;
   }
   moonScale = 1;
-  private sat: { group: THREE.Group; items: { ring: THREE.LineLoop; dot: THREE.Mesh; r: number; P: number; tilt: number; label: HTMLDivElement }[]; jwst: { dot: THREE.Mesh; r: number; label: HTMLDivElement } | null } | null = null;
+  private sat: { group: THREE.Group; items: SatItem[]; jwst: { dot: THREE.Mesh; r: number; label: HTMLDivElement } | null } | null = null;
   private probe: { line: THREE.Line; dot: THREE.Mesh; label: HTMLDivElement } | null = null;
 
-  /** 지구 둘레 인공위성 궤도 (반지름은 위성 궤도와 같은 규칙으로 키워 그림): [이름, 고도 km, 경사 °, 주기 분] */
-  setSatellites(list: [string, number, number, number, string][], jwstKm: number): void {
+  /**
+   * 지구 둘레 인공위성 궤도 (반지름은 위성 궤도와 같은 규칙으로 키워 그림): [이름, 고도 km, 경사 °, 주기 분, 설명, 위상 rad, 그 위상의 날 (J2000 일)]
+   * 위상이 있으면 실시간 궤도 요소에서 계산한 지금 위치에서 시작한다.
+   */
+  setSatellites(list: [string, number, number, number, string, number?, number?][], jwstKm: number): void {
     const earth = this.live.find((l) => l.p.name === "지구");
     if (!earth) return;
+    if (this.sat) { this.root.remove(this.sat.group); this.sat.items.forEach((it) => it.label.remove()); this.sat.jwst?.label.remove(); this.sat.group.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose(); (m.material as THREE.Material | undefined)?.dispose?.(); }); this.sat = null; }
     const rd = (earth.mesh.geometry as THREE.SphereGeometry).parameters.radius, Re = 6371;
-    const group = new THREE.Group(), items: NonNullable<typeof this.sat>["items"] = [];
-    for (const [name, alt, incl, P] of list) {
+    const group = new THREE.Group(), items: SatItem[] = [];
+    for (const [name, alt, incl, P, , ph, t0] of list) {
       const r = rd * (1.25 + 1.4 * Math.log10((Re + alt) / Re) * 1.6), pts: THREE.Vector3[] = [];
       for (let k = 0; k < 96; k++) { const t = k / 96 * 2 * Math.PI; pts.push(new THREE.Vector3(r * Math.cos(t), 0, r * Math.sin(t))); }
       const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x7fd3ff, transparent: true, opacity: 0.45 }));
@@ -341,7 +346,7 @@ export class SystemView {
       ring.rotation.x = tilt;
       const dot = new THREE.Mesh(new THREE.SphereGeometry(rd * 0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xbfe9ff }));
       group.add(ring); group.add(dot);
-      items.push({ ring, dot, r, P: P / 1440, tilt, label: this.makeLabel(name, "sat") });
+      items.push({ ring, dot, r, P: P / 1440, tilt, ph: ph ?? 0, t0: t0 ?? 0, label: this.makeLabel(name, "sat") });
     }
     const jr = rd * (1.25 + 1.4 * Math.log10((Re + jwstKm) / Re) * 1.6);
     const jdot = new THREE.Mesh(new THREE.SphereGeometry(rd * 0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd27f }));
@@ -416,7 +421,7 @@ export class SystemView {
       g.visible = !earth.gone;
       g.position.copy(er);
       for (const it of this.sat.items) {
-        const ang = 2 * Math.PI * ((this.days / it.P) % 1);
+        const ang = it.ph + 2 * Math.PI * (((this.days - it.t0) / it.P) % 1);
         it.dot.position.set(it.r * Math.cos(ang), 0, it.r * Math.sin(ang)).applyAxisAngle(new THREE.Vector3(1, 0, 0), it.tilt);
         if (earth.gone) { it.label.style.display = "none"; continue; }
         place(it.label, it.dot.position.clone().add(er).applyMatrix4(R4), 30, ep);

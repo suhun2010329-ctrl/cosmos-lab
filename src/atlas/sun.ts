@@ -2,6 +2,7 @@
 // 주계열 광도: Gough (1981) L(τ) = [1 + 0.4(1 − τ/τ☉)]⁻¹ (τ☉ = 4.57 Gyr)
 // 적색거성 이후 이정표: Schröder & Smith (2008) — 적색거성 끝 7.59 Gyr 뒤 L = 2,730 L☉, R = 256 R☉, M = 0.668 M☉,
 // 백색왜성 0.54 M☉. 달의 후퇴: 레이저 거리 측정 3.82 cm/년 (Williams & Boggs 2016), 조석 이론 da/dt ∝ a^(−11/2).
+import { NOW_YEAR } from "./time";
 
 export const SUN_AGE = 4.57; // Gyr
 
@@ -106,11 +107,11 @@ export function eclipseEndYears(): number {
   return (lo + hi) / 2;
 }
 
-export interface TimedEvent { years: number; label: string; detail: string; scale: "solar" | "earth" | "moon" | "galaxy" | "cosmic" | "star" }
+export interface TimedEvent { years: number; label: string; detail: string; scale: "solar" | "earth" | "moon" | "galaxy" | "cosmic" | "star"; /** 픽셀 충돌 장면 */ impact?: string }
 
 /** 태양계에서 예측된 사건 (날짜는 궤도 계산·문헌값) */
 export function solarSystemEvents(): TimedEvent[] {
-  const now = 2026.83;
+  const now = NOW_YEAR;
   const y = (yr: number) => yr - now;
   return [
     { years: y(2029.28), label: "소행성 아포피스가 지구 3만 2천 km까지 접근", detail: "2029년 4월 13일. 정지 위성보다 가까이 지나가 맨눈으로 보입니다 (NASA JPL).", scale: "solar" },
