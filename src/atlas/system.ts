@@ -14,6 +14,10 @@ export interface SysPlanet {
   L0: number;
   /** 공전 주기 [일] */
   P: number;
+  /** 평균 경도 변화 [°/세기] (있으면 P 대신 씀) */
+  Ldot?: number;
+  /** 궤도 요소 변화율 [a, e, i, 근일점, 승교점 /세기] (JPL 표, 1800–2050년). 영년 섭동 이론을 쓸 때는 끔 */
+  erates?: [number, number, number, number, number];
   R: number;
   Rest: boolean;
   type: string;
@@ -38,15 +42,19 @@ function kepler(M: number, e: number): number {
   return E;
 }
 
-/** 궤도 요소 → 황도 좌표 [AU] → three.js 좌표 (y가 황도 북극) */
+/** 궤도 요소 → 황도 좌표 [AU] → three.js 좌표 (y가 황도 북극). 변화율이 있으면 그날의 요소로 (1800–2050년 밖은 끝값에 고정) */
 export function orbitPos(p: SysPlanet, days: number, out: THREE.Vector3): THREE.Vector3 {
-  const n = 360 / p.P, M = ((p.L0 + n * days - p.peri) % 360) * DEG;
-  const E = kepler(M, p.e), nu = 2 * Math.atan2(Math.sqrt(1 + p.e) * Math.sin(E / 2), Math.sqrt(1 - p.e) * Math.cos(E / 2));
-  const r = p.a * (1 - p.e * Math.cos(E));
-  return eclipticToThree(p, nu, r, out);
+  const T = days / 36525, Tc = Math.max(-2.3, Math.min(0.5, T)), r5 = p.erates;
+  const a = r5 ? p.a + r5[0] * Tc : p.a, e = r5 ? p.e + r5[1] * Tc : p.e, inc = r5 ? p.i + r5[2] * Tc : p.i;
+  const peri = r5 ? p.peri + r5[3] * Tc : p.peri, node = r5 ? p.node + r5[4] * Tc : p.node;
+  const L = p.Ldot !== undefined ? p.L0 + p.Ldot * T : p.L0 + 360 / p.P * days;
+  const M = (((L - peri) % 360) + 360) % 360 * DEG;
+  const E = kepler(M, e), nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+  return eclToThree(node, peri, inc, nu, a * (1 - e * Math.cos(E)), out);
 }
-function eclipticToThree(p: SysPlanet, nu: number, r: number, out: THREE.Vector3): THREE.Vector3 {
-  const O = p.node * DEG, w = (p.peri - p.node) * DEG, i = p.i * DEG, u = w + nu;
+function eclipticToThree(p: SysPlanet, nu: number, r: number, out: THREE.Vector3): THREE.Vector3 { return eclToThree(p.node, p.peri, p.i, nu, r, out); }
+function eclToThree(node: number, peri: number, inc: number, nu: number, r: number, out: THREE.Vector3): THREE.Vector3 {
+  const O = node * DEG, w = (peri - node) * DEG, i = inc * DEG, u = w + nu;
   const x = r * (Math.cos(O) * Math.cos(u) - Math.sin(O) * Math.sin(u) * Math.cos(i));
   const y = r * (Math.sin(O) * Math.cos(u) + Math.cos(O) * Math.sin(u) * Math.cos(i));
   const z = r * Math.sin(u) * Math.sin(i);
@@ -66,7 +74,8 @@ export function habitableZone(L: number, Teff = 5780): [number, number] {
 
 export function solarSystem(): SysData {
   const planets: SysPlanet[] = PLANETS.map((b: Body) => ({
-    name: b.name, a: b.a, e: b.e, i: b.i, node: b.node, peri: b.peri, L0: b.L, P: 365.256 * Math.pow(b.a, 1.5), R: b.R, Rest: false,
+    name: b.name, a: b.a, e: b.e, i: b.i, node: b.node, peri: b.peri, L0: b.L, P: b.rates ? 360 / (b.rates[3] / 36525) : 365.256 * Math.pow(b.a, 1.5), R: b.R, Rest: false,
+    Ldot: b.rates?.[3], erates: b.rates ? [b.rates[0], b.rates[1], b.rates[2], b.rates[4], b.rates[5]] : undefined,
     type: b.type, col: b.col, col2: b.col2, bands: !!b.bands, rings: b.rings, Teq: 278.6 / Math.sqrt(b.a) * 0.915,
   }));
   return { name: "태양계", real: true, star: { T: 5772, R: 1, L: 1, M: 1, spect: "G2V" }, planets, hz: habitableZone(1, 5772) };
@@ -304,6 +313,7 @@ export class SystemView {
     this.live.forEach((l) => {
       const j = ORDER.indexOf(l.p.name), sec = d.real && t.secular && j >= 0 ? t.secular : null;
       l.p.e = sec ? sec.e[j] : l.base.e; l.p.peri = sec ? sec.peri[j] : l.base.peri;
+      l.p.erates = sec ? undefined : l.base.erates;
       l.p.i = sec ? sec.i[j] : l.base.i; l.p.node = sec ? sec.node[j] : l.base.node;
       l.p.a = l.base.a / M;
       l.gone = realAU > l.p.a * (1 - l.p.e) || (l.p.name === "지구" && !!t.earthGone);

@@ -1,7 +1,9 @@
 // 실시간 자료 분석 검사: 태양 주기 맞춤, 충돌 에너지·충돌구, 인공위성 궤도, 허블 상수 종합, 논문 값 추출·검증 규칙.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 import { ageForH0, diameterFromH, fitSolarCycle, hathaway, impactEffects, satNow, summarizeH0, type Measurement } from "../src/atlas/live";
+import { orbitPos, solarSystem } from "../src/atlas/system";
 // @ts-expect-error 순수 JS 모듈
 import { PARAMS, parseAtom, verify } from "../scripts/live/lib.mjs";
 
@@ -41,9 +43,24 @@ describe("변인 분석", () => {
   });
 });
 
+describe("실시간 자료로 모형 검증", () => {
+  it("행성 위치: JPL Horizons(2026-11-02 0시, 실시간 수집기가 받은 값)와 각 5′ 안 (JPL 표 1 요소 + 변화율)", () => {
+    // 태양 중심 황도 J2000 좌표 [AU]
+    const H: Record<string, number[]> = { 수성: [0.2922, 0.1484, -0.0147], 금성: [0.5152, 0.5068, -0.0228], 지구: [0.769, 0.6273, 0], 화성: [-0.3015, 1.5661, 0.0402], 목성: [-3.6717, 3.8454, 0.0662], 토성: [9.2141, 1.9413, -0.4006], 천왕성: [8.8176, 17.3201, -0.05], 해왕성: [29.8319, 1.481, -0.718] };
+    const days = 2461346.5 - 2451545.0, v = new THREE.Vector3();
+    for (const p of solarSystem().planets) {
+      const h = H[p.name];
+      if (!h) continue;
+      orbitPos(p, days, v);
+      const e = [v.x, -v.z, v.y], ang = Math.acos(Math.min(1, (e[0] * h[0] + e[1] * h[1] + e[2] * h[2]) / (Math.hypot(...e) * Math.hypot(...h))));
+      expect(ang * 180 / Math.PI * 60, p.name).toBeLessThan(5);
+    }
+  });
+});
+
 describe("논문 자동 수집기의 규칙", () => {
   const atom = `<feed><entry><id>http://arxiv.org/abs/2611.01234v1</id><published>2026-11-01T00:00:00Z</published><title>A new
-    distance-ladder measurement</title><summary>We find $H_0 = 72.6 \\pm 1.4$ km/s/Mpc using ...</summary><arxiv:journal_ref>ApJ 999, 1 (2026)</arxiv:journal_ref></entry>
+    distance-ladder measurement</title><summary>We find $H_0 = 72.6 \\pm 1.4$ km/s/Mpc using ...</summary><arxiv:journal_ref>Astronomy &amp; Astrophysics 999, 1 (2026)</arxiv:journal_ref></entry>
     <entry><id>http://arxiv.org/abs/2611.05555v1</id><title>Exotic</title><summary>We obtain H0=95.0 ± 1.0 km/s/Mpc.</summary></entry></feed>`;
   it("초록에서 값과 불확도를 뽑고 학술지 정보를 읽는다", () => {
     const e = parseAtom(atom);
@@ -51,7 +68,7 @@ describe("논문 자동 수집기의 규칙", () => {
     expect(e[0].title).toBe("A new distance-ladder measurement");
     const m = e[0].summary.match(PARAMS.H0.re);
     expect(+m[1]).toBe(72.6); expect(+m[2]).toBe(1.4);
-    expect(e[0].journal).toBe("ApJ 999, 1 (2026)");
+    expect(e[0].journal).toBe("Astronomy & Astrophysics 999, 1 (2026)");
   });
   it("범위 밖·게재 미확인·크게 어긋난 값은 보류, 나머지는 반영", () => {
     const ref = { mean: 68.4, sigma: 0.4, n: 4 }, [a, b] = parseAtom(atom);

@@ -12,7 +12,7 @@ describe("영년 섭동 (라플라스–라그랑주)", () => {
   const sec = buildSecular();
   it("지금 이심률을 그대로 재현", () => {
     expect(sec.at(0).e[2]).toBeCloseTo(0.0167, 4);
-    expect(sec.at(0).e[4]).toBeCloseTo(0.0485, 4);
+    expect(sec.at(0).e[4]).toBeCloseTo(0.04839, 4); // 목성: JPL 표 1의 J2000 값
   });
   it("지구 이심률은 ±100만 년 동안 0 ~ 0.06 (Laskar 2004: 0 ~ 0.058)", () => {
     let lo = 1, hi = 0;

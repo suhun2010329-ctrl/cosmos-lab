@@ -36,8 +36,10 @@ export async function refreshDirect(L: Live): Promise<string[]> {
   const done: string[] = [];
   const j = async (url: string) => { const r = await fetch(url, { signal: AbortSignal.timeout(12000) }); if (!r.ok) throw new Error(String(r.status)); return r.json(); };
   await Promise.all([
-    j("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json").then((kp: string[][]) => {
-      if (kp.length > 1) { const last = kp[kp.length - 1]; L.solar.kp = { time: last[0], value: +last[1] }; L.solar.kpRecent = kp.slice(-24).map((r) => [r[0], +r[1]]); done.push("Kp 지수"); }
+    j("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json").then((kp: (string[] | Record<string, string | number>)[]) => {
+      // 예전 형식(배열의 배열, 첫 줄 머리글)과 새 형식(객체 배열) 모두
+      const rows = kp.map((r) => (Array.isArray(r) ? [r[0], +r[1]] : [String(r.time_tag), +(r.Kp ?? r.kp ?? r.kp_index ?? r.estimated_kp)]) as [string, number]).filter((r) => isFinite(r[1]));
+      if (rows.length) { const last = rows[rows.length - 1]; L.solar.kp = { time: last[0], value: last[1] }; L.solar.kpRecent = rows.slice(-24); done.push("Kp 지수"); }
     }).catch(() => {}),
     j("https://services.swpc.noaa.gov/json/goes/primary/xray-flares-7-day.json").then((f: { max_time?: string; time_tag?: string; max_class?: string; current_class?: string }[]) => {
       L.solar.flares = f.slice(-12).map((x) => ({ peak: x.max_time ?? x.time_tag ?? "", cls: x.max_class ?? x.current_class ?? "" })).filter((x) => x.cls); done.push("X선 플레어");

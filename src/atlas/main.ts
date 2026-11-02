@@ -1147,7 +1147,7 @@ function renderLive(): void {
   const sol = L.solar;
   if (sol.monthly?.length) {
     const last = sol.monthly[sol.monthly.length - 1];
-    h += row("태양 흑점수 (" + last[0] + ")", Math.round(last[1]) + " · F10.7 " + Math.round(last[3]) + " sfu" + (sol.kp ? "<small>지금 Kp " + sol.kp.value.toFixed(1) + " (" + kpStorm(sol.kp.value) + ")" + (sol.flares?.length ? " · 최근 7일 가장 센 플레어 " + [...sol.flares].sort((a, b) => flareRank(b.cls) - flareRank(a.cls))[0].cls : "") + "</small>" : ""));
+    h += row("태양 흑점수 (" + last[0] + ")", Math.round(last[1]) + " · F10.7 " + Math.round(last[3]) + " sfu" + (sol.kp && isFinite(sol.kp.value) ? "<small>지금 Kp " + sol.kp.value.toFixed(1) + " (" + kpStorm(sol.kp.value) + ")" + (sol.flares?.length ? " · 최근 7일 가장 센 플레어 " + [...sol.flares].sort((a, b) => flareRank(b.cls) - flareRank(a.cls))[0].cls : "") + "</small>" : ""));
     const fit = fitSolarCycle(sol.monthly);
     if (fit) {
       const nextYr = sol.predicted?.find((r) => r[0] >= new Date(Date.now() + 365 * 864e5).toISOString().slice(0, 7));
@@ -1161,7 +1161,7 @@ function renderLive(): void {
   }
   for (const r of (L.neo.risks ?? []).slice(0, 3)) {
     const D = r.diameter ? r.diameter * 1000 : diameterFromH(r.H), fx = impactEffects(D, r.v || 17);
-    h += row("충돌 위험: " + r.name, "확률 1/" + Math.round(1 / Math.max(r.ip, 1e-12)).toLocaleString("ko-KR") + " (" + r.range + ")<small>지름 약 " + (D < 1000 ? Math.round(D) + " m" : (D / 1000).toFixed(1) + " km") + " · 토리노 " + r.ts + " · 부딪치면 " + (fx.E_Mt < 1 ? (fx.E_Mt * 1000).toPrecision(2) + " kt" : fx.E_Mt.toPrecision(2) + " Mt") + (fx.airburst ? " (대부분 공중 폭발)" : " · 충돌구 약 " + fx.craterKm!.toFixed(1) + " km") + "</small>");
+    h += row("충돌 위험: " + r.name, "확률 1/" + Math.round(1 / Math.max(r.ip, 1e-12)).toLocaleString("ko-KR") + " (" + r.range + ")<small>지름 약 " + (D < 1000 ? Math.round(D) + " m" : (D / 1000).toFixed(1) + " km") + " · 토리노 " + r.ts + " · 부딪치면 " + (fx.E_Mt < 1 ? (fx.E_Mt * 1000).toPrecision(2) + " kt" : fx.E_Mt < 1000 ? fx.E_Mt.toPrecision(2) + " Mt" : Math.round(fx.E_Mt).toLocaleString("ko-KR") + " Mt") + (fx.airburst ? " (대부분 공중 폭발)" : " · 충돌구 약 " + fx.craterKm!.toFixed(1) + " km") + "</small>");
   }
   if (L.exoplanets.count) h += row("확인된 외계행성 (NASA)", L.exoplanets.count.toLocaleString("ko-KR") + "개<small>지난 120일 새로 등록 " + (L.exoplanets.recent?.length ?? 0) + "개 → 지도에 없던 " + liveAdded.size + "개를 더함</small>");
   for (const s of L.satellites.slice(0, 2)) { const st = satNow(s, new Date()); h += row(s.name, "고도 약 " + Math.round(st.alt) + " km · " + st.periodMin.toFixed(1) + "분에 한 바퀴<small>CelesTrak 궤도 요소 (" + st.ageDays.toFixed(1) + "일 전 기준) · 행성계 장면의 지구 둘레에 반영</small>"); }

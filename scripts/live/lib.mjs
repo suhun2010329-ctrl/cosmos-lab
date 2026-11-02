@@ -3,7 +3,8 @@ export const PARAMS = {
   H0: { label: "허블 상수 H₀", unit: "km/s/Mpc", lo: 55, hi: 90, query: 'cat:astro-ph.CO AND abs:"Hubble constant"',
     re: /H_?\{?0\}?\s*\$?\s*=\s*\$?\s*(\d{2}(?:\.\d{1,2})?)\s*(?:\\pm|±|\+\/-|\$\\pm\$)\s*(\d{1,2}(?:\.\d{1,2})?)/ },
 };
-function strip(s) { return s.replace(/\s+/g, " ").trim(); }
+/** 공백 정리 + XML 문자 참조 풀기 (&amp; → &) */
+export function strip(s) { return s.replace(/\s+/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim(); }
 export function parseAtom(xml) {
   const out = [];
   for (const m of xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {

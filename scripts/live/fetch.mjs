@@ -37,7 +37,9 @@ async function solar() {
   const out = {};
   if (Array.isArray(obs)) out.monthly = obs.filter((r) => r["time-tag"] >= "2008-01").map((r) => [r["time-tag"], r.ssn, r["smoothed_ssn"], r["f10.7"]]);
   if (Array.isArray(pred)) out.predicted = pred.slice(0, 120).map((r) => [r["time-tag"], r.predicted_ssn, r["predicted_f10.7"]]);
-  if (Array.isArray(kp) && kp.length > 1) { const last = kp[kp.length - 1]; out.kp = { time: last[0], value: +last[1] }; out.kpRecent = kp.slice(-24).map((r) => [r[0], +r[1]]); }
+  // Kp: 예전 형식(첫 줄이 머리글인 배열의 배열)과 새 형식(객체 배열) 모두 받음
+  const kpRow = (r) => Array.isArray(r) ? [r[0], +r[1]] : [r.time_tag, +(r.Kp ?? r.kp ?? r.kp_index ?? r.estimated_kp)];
+  if (Array.isArray(kp) && kp.length) { const rows = kp.map(kpRow).filter((r) => isFinite(r[1])); if (rows.length) { const last = rows[rows.length - 1]; out.kp = { time: last[0], value: last[1] }; out.kpRecent = rows.slice(-24); } }
   if (Array.isArray(flares)) out.flares = flares.slice(-12).map((f) => ({ peak: f.max_time ?? f.time_tag, cls: f.max_class ?? f.current_class })).filter((f) => f.cls);
   return out;
 }

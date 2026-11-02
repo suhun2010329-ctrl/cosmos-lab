@@ -81,7 +81,7 @@ src/
                         시간축(time), 태양(sun), 영년 섭동(secular), 별(stellar), 국부 은하군(localgroup),
                         천체 특성(bodies), 미션(mission), 예측·사건(predict), 그래프(charts), 4차원 좌표·광원뿔(four),
                         원소 구성(composition), 픽셀 충돌(impact·impactview·impactscenes), 실시간 자료(live)
-tests/                  계산값이 관측값·문헌값과 맞는지 확인 (69개)
+tests/                  계산값이 관측값·문헌값과 맞는지 확인 (70개)
 scripts/live/           실시간 우주 자료 수집기 (GitHub Actions에서 실행)
 ```
 
@@ -103,7 +103,7 @@ scripts/live/           실시간 우주 자료 수집기 (GitHub Actions에서 
 
 | 대상 | 방법 | 검증 (tests/) |
 |---|---|---|
-| 행성 위치 | J2000 궤도 요소 + 케플러 방정식 | — |
+| 행성 위치 | JPL 표 1 궤도 요소와 변화율(Standish) + 케플러 방정식 | 실시간 수집한 JPL Horizons와 각 오차: 지구 0.06′, 수성 0.3′, 목성 1.4′, 토성 4.4′ (변화율을 넣기 전 토성 68′) |
 | 행성 궤도의 장기 변화 | 라플라스–라그랑주 영년 섭동 (8행성, 수성 일반 상대성 포함) | 지구 이심률 ±100만 년 0–0.057 (Laskar 2004: 0–0.058) |
 | 태양 | 주계열 Gough (1981), 이후 Schröder & Smith (2008) | 10억 년 뒤 1.10 L☉, 75.9억 년 뒤 적색거성 정점 |
 | 달 | 조석 후퇴 3.82 cm/년, da/dt ∝ a^(−11/2), 각운동량 보존 | 10억 년 뒤 41.5만 km, 하루 29.6시간 |
