@@ -11,19 +11,29 @@ const UA = "cosmos-lab-live/1.0 (+https://github.com/suhun2010329-ctrl/cosmos-la
 const now = new Date();
 const sources = [];
 
-async function get(name, url, kind = "json") {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** 한 번 실패하면(요청 제한 429·연결 실패) 잠깐 쉬고 한 번 더 */
+async function get(name, url, kind = "json", record = true) {
   const t0 = Date.now();
-  try {
-    const r = await fetch(url, { headers: { "User-Agent": UA, Accept: kind === "json" ? "application/json" : "*/*" }, signal: AbortSignal.timeout(25000) });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const body = kind === "json" ? await r.json() : await r.text();
-    sources.push({ name, url, ok: true, ms: Date.now() - t0 });
-    return body;
-  } catch (e) {
-    sources.push({ name, url, ok: false, error: String(e && e.message || e) });
-    return null;
+  let err = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": UA, Accept: kind === "json" ? "application/json" : "*/*" }, signal: AbortSignal.timeout(25000) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const body = kind === "json" ? await r.json() : await r.text();
+      if (record) sources.push({ name, url, ok: true, ms: Date.now() - t0 });
+      return body;
+    } catch (e) {
+      err = e;
+      if (attempt === 0) await sleep(String(e && e.message).includes("429") ? 4000 : 1500);
+    }
   }
+  if (record) sources.push({ name, url, ok: false, error: String(err && err.message || err) });
+  return null;
 }
+// 직전 배포의 자료: 이번에 실패한 원천은 그 값을 ‘지난 값’으로 표시해 이어서 씀
+const PAGES = "https://suhun2010329-ctrl.github.io/cosmos-lab/";
+const prev = await get("직전 배포 자료", PAGES + "data/live.json", "json", false);
 const iso = (d) => d.toISOString().slice(0, 10);
 
 // ---------- 태양 활동 (NOAA SWPC) ----------
@@ -82,14 +92,16 @@ async function exoplanets() {
 
 // ---------- 인공위성 (CelesTrak GP) ----------
 async function satellites() {
-  const list = [["국제우주정거장 (ISS)", 25544], ["허블 우주 망원경", 20580], ["톈궁 (중국 우주정거장)", 48274]];
+  const names = { 25544: "국제우주정거장 (ISS)", 20580: "허블 우주 망원경", 48274: "톈궁 (중국 우주정거장)" };
+  // 우주정거장 묶음 한 번 + 허블 한 번 (CelesTrak은 같은 자료를 자주 받으면 막음)
+  const st = await get("CelesTrak 우주정거장", "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json");
+  const hb = await get("CelesTrak 허블", "https://celestrak.org/NORAD/elements/gp.php?CATNR=20580&FORMAT=json");
+  const all = [...(Array.isArray(st) ? st : []), ...(Array.isArray(hb) ? hb : [])];
   const out = [];
-  for (const [name, id] of list) {
-    const r = await get("CelesTrak " + id, "https://celestrak.org/NORAD/elements/gp.php?CATNR=" + id + "&FORMAT=json");
-    if (Array.isArray(r) && r[0]) {
-      const g = r[0];
-      out.push({ name, id, epoch: g.EPOCH, n: +g.MEAN_MOTION, e: +g.ECCENTRICITY, i: +g.INCLINATION, raan: +g.RA_OF_ASC_NODE, argp: +g.ARG_OF_PERICENTER, M: +g.MEAN_ANOMALY, bstar: +g.BSTAR });
-    }
+  for (const [id, name] of Object.entries(names)) {
+    const g = all.find((x) => +x.NORAD_CAT_ID === +id);
+    if (g) out.push({ name, id: +id, epoch: g.EPOCH, n: +g.MEAN_MOTION, e: +g.ECCENTRICITY, i: +g.INCLINATION, raan: +g.RA_OF_ASC_NODE, argp: +g.ARG_OF_PERICENTER, M: +g.MEAN_ANOMALY, bstar: +g.BSTAR });
+    else { const old = prev?.satellites?.find((x) => x.id === +id); if (old) out.push({ ...old, stale: true }); }
   }
   return out;
 }
@@ -141,7 +153,10 @@ async function papers(curated) {
       out.checked.push(e.id);
       if (curated.some((c) => c.arxiv && e.id && e.id.startsWith(c.arxiv))) continue;
       let pub = e.journal || e.doi ? { journal: e.journal, doi: e.doi } : null;
-      if (!pub && e.title) pub = await crossrefPublished(e.title);
+      // 직전 배포에서 이미 게재가 확인된 논문이면 다시 묻지 않음
+      const known = prev?.papers?.accepted?.find((x) => x.arxiv === e.id && x.journal);
+      if (!pub && known) pub = { journal: known.journal, doi: known.doi };
+      if (!pub && e.title) { pub = await crossrefPublished(e.title); await sleep(1200); }
       const rec = verify(key, +m[1], +m[2], { mean, sigma: sMean, n: ref.length }, pub, e);
       (rec.status === "pending" ? out.pending : out.accepted).push(rec);
     }
@@ -153,7 +168,15 @@ async function papers(curated) {
 const curatedPath = new URL("../../public/data/literature.json", import.meta.url);
 let curated = [];
 try { curated = JSON.parse(readFileSync(curatedPath, "utf-8")).measurements ?? []; } catch { /* 없음 */ }
-const [sol, ne, ex, sat, hz] = await Promise.all([solar(), neo(), exoplanets(), satellites(), horizons()]);
+let [sol, ne, ex, sat, hz] = await Promise.all([solar(), neo(), exoplanets(), satellites(), horizons()]);
+// 이번에 비어 버린 부분은 직전 배포 값으로 (stale 표시)
+const keep = (now, old, has) => (has(now) || !old ? now : { ...old, stale: prev.generated });
+if (prev) {
+  sol = keep(sol, prev.solar, (x) => x.monthly?.length);
+  ne = keep(ne, prev.neo, (x) => x.approaches?.length);
+  ex = keep(ex, prev.exoplanets, (x) => x.count);
+  hz = keep(hz, prev.horizons, (x) => Object.keys(x.pos ?? {}).length);
+}
 const pap = await papers(curated);
 const live = { generated: now.toISOString(), solar: sol, neo: ne, exoplanets: ex, satellites: sat, horizons: hz, papers: pap, sources };
 writeFileSync(OUT, JSON.stringify(live));

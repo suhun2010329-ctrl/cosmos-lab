@@ -6,16 +6,17 @@
 export interface LiveSource { name: string; url: string; ok: boolean; ms?: number; error?: string }
 export interface Approach { name: string; date: string; distAU: number; distMinAU: number; vRel: number; H: number | null; diameter: number | null }
 export interface Risk { des: string; name: string; ip: number; ps: number; ts: number; range: string; n: number; diameter: number; H: number; v: number; lastObs: string }
-export interface Sat { name: string; id: number; epoch: string; n: number; e: number; i: number; raan: number; argp: number; M: number; bstar: number }
+export interface Sat { name: string; id: number; epoch: string; n: number; e: number; i: number; raan: number; argp: number; M: number; bstar: number; /** 이번 수집에 실패해 직전 값을 씀 */ stale?: boolean }
 export interface ExoRow { pl_name: string; hostname: string; ra: number; dec: number; sy_dist: number; pl_orbper: number | null; pl_orbsmax: number | null; pl_orbeccen: number | null; pl_rade: number | null; pl_bmassj: number | null; pl_radj: number | null; pl_eqt: number | null; disc_year: number | null; discoverymethod: string | null; st_teff: number | null; st_rad: number | null; st_mass: number | null; st_met: number | null; st_spectype: string | null; sy_vmag: number | null; releasedate: string }
 export interface Measurement { param: string; value: number; sigma: number; value2?: number; sigma2?: number; unit: string; epoch?: string; method: string; title: string; journal: string | null; doi?: string | null; arxiv?: string; status: "accepted" | "pending"; reasons?: string[]; detail?: string; date?: string; event?: { date: string; label: string; detail: string } }
 export interface Live {
   generated: string;
-  solar: { monthly?: [string, number, number, number][]; predicted?: [string, number, number][]; kp?: { time: string; value: number }; kpRecent?: [string, number][]; flares?: { peak: string; cls: string }[] };
-  neo: { approaches?: Approach[]; risks?: Risk[] };
-  exoplanets: { count?: number; recent?: ExoRow[] };
+  /** stale: 이번 수집에 실패해 직전 배포(그 시각)의 값을 씀 */
+  solar: { stale?: string; monthly?: [string, number, number, number][]; predicted?: [string, number, number][]; kp?: { time: string; value: number }; kpRecent?: [string, number][]; flares?: { peak: string; cls: string }[] };
+  neo: { stale?: string; approaches?: Approach[]; risks?: Risk[] };
+  exoplanets: { stale?: string; count?: number; recent?: ExoRow[] };
   satellites: Sat[];
-  horizons: { epoch?: string; jd?: number; pos: Record<string, [number, number, number]> };
+  horizons: { stale?: string; epoch?: string; jd?: number; pos: Record<string, [number, number, number]> };
   papers: { checked: string[]; accepted: Measurement[]; pending: Measurement[] };
   sources: LiveSource[];
 }

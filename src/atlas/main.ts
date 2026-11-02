@@ -1171,6 +1171,9 @@ function renderLive(): void {
   if (H0.early.n && H0.late.n) h += row("허블 상수 (논문 종합)", "초기 우주 " + H0.early.mean.toFixed(2) + " ± " + H0.early.sigma.toFixed(2) + " · 가까운 우주 " + H0.late.mean.toFixed(2) + " ± " + H0.late.sigma.toFixed(2) + " km/s/Mpc<small>학술지에 실린 측정만 역분산 가중 평균 · 두 값의 차이(‘허블 긴장’) " + H0.tension.toFixed(1) + "σ · 가까운 우주 값이 맞다면 (물질 비율을 그대로 두면) 우주 나이는 138억 년이 아니라 약 " + Math.round(ageForH0(H0.late.mean) * 10) + "억 년</small>");
   const de = lit.measurements.find((m) => m.param === "w0wa" && m.status === "accepted");
   if (de) h += row("암흑에너지 (DESI DR2)", "w₀ = " + de.value + " ± " + de.sigma + " · wₐ = " + de.value2 + " ± " + de.sigma2 + "<small>" + de.method + " · ‘약해지는 암흑에너지’ 시나리오에 적용 중</small>");
+  const stale = [["태양", L.solar.stale], ["소행성", L.neo.stale], ["외계행성", L.exoplanets.stale], ["Horizons", L.horizons.stale]].filter((x) => x[1]).map((x) => x[0]);
+  if (L.satellites.some((x) => x.stale)) stale.push("위성 일부");
+  if (stale.length) h += row("지난 값을 쓴 원천", stale.join(", ") + "<small>이번 수집에 실패해 직전에 배포한 값을 이어서 씁니다</small>");
   setText("lvRows", h, true);
   // 논문 목록
   const all = [...lit.measurements.map((m) => ({ ...m, src: "사람 검증" })), ...L.papers.accepted.map((m) => ({ ...m, src: "자동 수집" })), ...L.papers.pending.map((m) => ({ ...m, src: "자동 수집" }))];
